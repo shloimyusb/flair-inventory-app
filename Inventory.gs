@@ -7,6 +7,7 @@ function getAppBootstrap(token) {
     vinylConfigured: !!PropertiesService.getScriptProperties().getProperty('VINYL_SPREADSHEET_ID'),
     scannerUrl: PropertiesService.getScriptProperties().getProperty('SCANNER_URL') || '',
     appUrl: ScriptApp.getService().getUrl(),
+    environment: PropertiesService.getScriptProperties().getProperty('INVENTORY_ENVIRONMENT') || 'test',
   };
 }
 

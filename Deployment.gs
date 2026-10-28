@@ -53,7 +53,7 @@ function setupProductionInventory() {
     const email = Session.getEffectiveUser().getEmail();
     const pin = Utilities.getUuid().replace(/-/g,'').slice(0,16);
     setInventoryUser_(email,'Flair Administrator','admin',pin);
-    props.setProperties({PRODUCTION_SETUP_COMPLETE:'true',INITIAL_ADMIN_EMAIL:email,INITIAL_ADMIN_PIN:pin});
+    props.setProperties({PRODUCTION_SETUP_COMPLETE:'true',INITIAL_ADMIN_EMAIL:email,INITIAL_ADMIN_PIN:pin,INVENTORY_ENVIRONMENT:'production'});
     props.deleteProperty('TEST_LOGIN_PIN');
     CacheService.getScriptCache().removeAll(['inventory:carpet','inventory:tile','inventory:vinyl']);
     console.log('Production configured. Backup IDs and initial admin credentials are in Script Properties. Test accounts have been removed.');

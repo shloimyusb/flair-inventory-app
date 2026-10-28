@@ -55,6 +55,7 @@ async function bootstrap(){
   const data = await call('getAppBootstrap',state.token);
   state.user=data.user; state.carpetSheets=data.carpetSheets||[]; state.scannerUrl=data.scannerUrl||'';
   state.vinylConfigured=!!data.vinylConfigured;
+  $('testBanner').classList.toggle('hidden',data.environment==='production');
   if(state.scannerUrl){const url=new URL(state.scannerUrl);url.searchParams.set('returnUrl',data.appUrl);$('scanBtn').href=url.toString();}
   $('userName').textContent=state.user.name;
   $('loginView').classList.add('hidden'); $('appView').classList.remove('hidden');
