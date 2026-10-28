@@ -4,6 +4,8 @@ const state = {
   user: null,
   category: 'carpet',
   inventory: [],
+  allInventory: [],
+  inventoryRequest: 0,
   carpetSheets: [],
   adjustItem: null,
   adjustAction: 'add',
@@ -30,7 +32,8 @@ function bindEvents(){
   $('logoutBtn').addEventListener('click', logout);
   document.querySelectorAll('.nav-btn').forEach(b=>b.addEventListener('click',()=>switchView(b.dataset.view)));
   document.querySelectorAll('.category-btn').forEach(b=>b.addEventListener('click',()=>switchCategory(b.dataset.category)));
-  $('searchInput').addEventListener('input', debounce(loadInventory, 250));
+  $('searchInput').addEventListener('input', applyInventoryFilters);
+  $('bayFilter').addEventListener('change', applyInventoryFilters);
   $('refreshBtn').addEventListener('click',()=>loadInventory(true));
   $('historyRefreshBtn').addEventListener('click',loadHistory);
   $('addRollBtn').addEventListener('click',openRollDialog);
@@ -76,6 +79,7 @@ function switchView(view){
 
 function switchCategory(category){
   state.category=category; $('searchInput').value='';
+  $('bayFilter').value='';state.allInventory=[];
   document.querySelectorAll('.category-btn').forEach(b=>b.classList.toggle('active',b.dataset.category===category));
   $('addRollBtn').classList.toggle('hidden',category!=='carpet');
   $('scanBtn').classList.toggle('hidden',category!=='vinyl');
@@ -83,13 +87,30 @@ function switchCategory(category){
 }
 
 async function loadInventory(force){
-  if(state.category==='vinyl' && !state.vinylConfigured){state.inventory=[];$('statusLine').textContent='Vinyl sheet not connected yet.';$('inventoryGrid').innerHTML='<div class="card">Vinyl inventory will be available when its Google Sheet is connected. You can still test the label scanner.</div>';return}
+  const requestId=++state.inventoryRequest,category=state.category;
+  $('bayFilter').disabled=true;
+  if(category==='vinyl' && !state.vinylConfigured){state.inventory=[];state.allInventory=[];populateBayFilter();$('statusLine').textContent='Vinyl sheet not connected yet.';$('inventoryGrid').innerHTML='<div class="card">Vinyl inventory will be available when its Google Sheet is connected. You can still test the label scanner.</div>';return}
   $('statusLine').textContent='Loading…';
   try{
-    state.inventory=await call('getInventory',state.token,state.category,$('searchInput').value);
-    renderInventory();
-    $('statusLine').textContent=`${state.inventory.length} ${state.category} item${state.inventory.length===1?'':'s'}`;
+    const items=await call('getInventory',state.token,category,'');
+    if(requestId!==state.inventoryRequest || category!==state.category)return;
+    state.allInventory=items;populateBayFilter();$('bayFilter').disabled=false;applyInventoryFilters();
   }catch(err){ $('statusLine').textContent=''; toast(err.message,true); }
+}
+
+function populateBayFilter(){
+  const selected=$('bayFilter').value;
+  const bays=[...new Set(state.allInventory.map(item=>item.sourceSheet).filter(Boolean))].sort((a,b)=>a.localeCompare(b,undefined,{numeric:true,sensitivity:'base'}));
+  $('bayFilter').innerHTML='<option value="">All bays</option>'+bays.map(bay=>`<option value="${escAttr(bay)}">${esc(bay)} (${state.allInventory.filter(item=>item.sourceSheet===bay).length})</option>`).join('');
+  $('bayFilter').value=bays.includes(selected)?selected:'';
+}
+
+function applyInventoryFilters(){
+  if(state.category==='vinyl' && !state.vinylConfigured)return;
+  const bay=$('bayFilter').value,terms=$('searchInput').value.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  state.inventory=state.allInventory.filter(item=>(!bay || item.sourceSheet===bay) && terms.every(term=>JSON.stringify(item).toLowerCase().includes(term)));
+  renderInventory();
+  $('statusLine').textContent=`${state.inventory.length} of ${state.allInventory.length} ${state.category} item${state.inventory.length===1?'':'s'}${bay?' · '+bay:''}`;
 }
 
 function renderInventory(){
