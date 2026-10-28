@@ -55,9 +55,12 @@ async function bootstrap(){
   const data = await call('getAppBootstrap',state.token);
   state.user=data.user; state.carpetSheets=data.carpetSheets||[]; state.scannerUrl=data.scannerUrl||'';
   state.vinylConfigured=!!data.vinylConfigured;
+  if(state.scannerUrl){const url=new URL(state.scannerUrl);url.searchParams.set('returnUrl',data.appUrl);$('scanBtn').href=url.toString();}
   $('userName').textContent=state.user.name;
   $('loginView').classList.add('hidden'); $('appView').classList.remove('hidden');
   populateRollSheets();
+  const scan=[$('initialScanCode').value,$('initialScanThickness').value].filter(Boolean).join(' ');
+  if(scan){switchCategory('vinyl');$('searchInput').value=scan;$('initialScanCode').value='';$('initialScanThickness').value='';}
   await loadInventory(true);
 }
 
@@ -148,9 +151,8 @@ async function loadHistory(){
   }catch(err){toast(err.message,true)}
 }
 
-function openScanner(){
-  if(!state.scannerUrl){toast('The camera scanner is not configured yet. You can still search vinyl manually.',true);return}
-  try{const url=new URL(state.scannerUrl);state.scanNonce=crypto.randomUUID();url.searchParams.set('returnOrigin',location.origin);url.searchParams.set('nonce',state.scanNonce);state.scannerWindow=window.open(url.toString(),'flairScanner','popup,width=720,height=850');if(!state.scannerWindow)toast('Allow pop-ups to open the scanner.',true)}catch(e){toast('Could not open the scanner window.',true)}
+function openScanner(event){
+  if(!state.scannerUrl){event.preventDefault();toast('The camera scanner is not configured yet. You can still search vinyl manually.',true);}
 }
 function handleScannerMessage(event){
   if(!state.scannerUrl)return;
@@ -173,3 +175,4 @@ function fmt(v){return Number(v).toLocaleString(undefined,{maximumFractionDigits
 function esc(v){return String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
 function escAttr(v){return esc(v)}
 </script>
+

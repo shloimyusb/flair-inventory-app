@@ -6,6 +6,7 @@ function getAppBootstrap(token) {
     carpetSheets: safeSheetNames_('carpet'),
     vinylConfigured: !!PropertiesService.getScriptProperties().getProperty('VINYL_SPREADSHEET_ID'),
     scannerUrl: PropertiesService.getScriptProperties().getProperty('SCANNER_URL') || '',
+    appUrl: ScriptApp.getService().getUrl(),
   };
 }
 

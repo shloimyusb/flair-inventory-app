@@ -60,6 +60,10 @@
     function sendResult(){
       const code=$('codeInput').value.trim().replace(/[–—]/g,'-'); const thickness=$('thicknessInput').value.trim();
       if(!code && !thickness){$('status').textContent='Enter a product code or thickness first.';return}
+      const returnUrl=new URLSearchParams(location.search).get('returnUrl');
+      if(returnUrl && /^https:\/\/script\.google\.com\/macros\/s\/[A-Za-z0-9_-]+\/exec$/.test(returnUrl)){
+        const url=new URL(returnUrl);url.searchParams.set('scanCode',code);url.searchParams.set('scanThickness',thickness);stopCamera();location.assign(url.toString());return;
+      }
       const params=new URLSearchParams(location.search),origin=params.get('returnOrigin'),nonce=params.get('nonce');
       if(window.opener && origin && /^https:\/\/([a-z0-9-]+-script\.googleusercontent\.com|script\.google\.com)$/.test(origin)){window.opener.postMessage({type:'flair-vinyl-scan',code,thickness,nonce},origin);window.close()} else {$('status').textContent='Return to the inventory app and enter this result manually.'}
     }

@@ -8,6 +8,8 @@
 </head>
 <body>
   <div id="toast" class="toast hidden"></div>
+  <input type="hidden" id="initialScanCode" value="<?= initialScanCode ?>">
+  <input type="hidden" id="initialScanThickness" value="<?= initialScanThickness ?>">
 
   <main id="loginView" class="login-shell">
     <section class="login-card">
@@ -41,7 +43,7 @@
           <button class="category-btn" data-category="vinyl">Vinyl</button>
         </div>
         <div class="toolbar-actions">
-          <button id="scanBtn" class="btn secondary hidden">Scan Vinyl Label</button>
+          <a id="scanBtn" class="btn secondary hidden" role="button" target="_top" style="text-decoration:none">Scan Vinyl Label</a>
           <button id="addRollBtn" class="btn primary">+ Add New Roll</button>
         </div>
       </div>

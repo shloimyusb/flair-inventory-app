@@ -10,7 +10,7 @@ Mobile inventory app hosted by Google Apps Script, with Google Sheets as the sou
 - History records employee, timestamp, source tab, action, and before/after quantities.
 - Approved email/PIN login with admin, employee, and view roles. Login attempts are limited; sessions expire and revoked users lose access.
 - Vinyl remains scaffolded until its sheet is configured.
-- Scanner supports camera capture, photo upload, OCR, and manual correction. Results return to the app using a checked origin, popup source, and nonce. Inventory credentials are never sent to the scanner.
+- Scanner supports camera capture, photo upload, OCR, and manual correction. The scanner opens as a full page and returns the detected code/thickness to the validated Apps Script app URL. Inventory credentials are never sent to the scanner.
 
 ## Files and deployment
 
@@ -41,3 +41,4 @@ Run node check.cjs in this repository, or node tests/check.cjs in the grouped lo
 Hosted checks use only TEST workbooks: subtract/add carpet footage, add a new roll, subtract/add tile boxes, inspect history, test view-only access, and verify scanner results return to the app. Live production quantities should only be read during deployment verification.
 
 Google Sheets and Apps Script do not provide a cross-service transaction here. The script lock serializes app writes; users should refresh and check history before retrying an adjustment after a connection error. Direct concurrent edits in Google Sheets are outside the app lock.
+
