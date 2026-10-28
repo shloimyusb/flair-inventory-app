@@ -34,6 +34,8 @@ function bindEvents(){
   document.querySelectorAll('.category-btn').forEach(b=>b.addEventListener('click',()=>switchCategory(b.dataset.category)));
   $('searchInput').addEventListener('input', applyInventoryFilters);
   $('bayFilter').addEventListener('change', applyInventoryFilters);
+  $('locationFilter').addEventListener('change', applyInventoryFilters);
+  $('sortOrder').addEventListener('change', applyInventoryFilters);
   $('refreshBtn').addEventListener('click',()=>loadInventory(true));
   $('historyRefreshBtn').addEventListener('click',loadHistory);
   $('addRollBtn').addEventListener('click',openRollDialog);
@@ -79,7 +81,7 @@ function switchView(view){
 
 function switchCategory(category){
   state.category=category; $('searchInput').value='';
-  $('bayFilter').value='';state.allInventory=[];
+  $('bayFilter').value='';$('locationFilter').value='';state.allInventory=[];
   document.querySelectorAll('.category-btn').forEach(b=>b.classList.toggle('active',b.dataset.category===category));
   $('addRollBtn').classList.toggle('hidden',category!=='carpet');
   $('scanBtn').classList.toggle('hidden',category!=='vinyl');
@@ -89,12 +91,13 @@ function switchCategory(category){
 async function loadInventory(force){
   const requestId=++state.inventoryRequest,category=state.category;
   $('bayFilter').disabled=true;
+  $('locationFilter').disabled=true;
   if(category==='vinyl' && !state.vinylConfigured){state.inventory=[];state.allInventory=[];populateBayFilter();$('statusLine').textContent='Vinyl sheet not connected yet.';$('inventoryGrid').innerHTML='<div class="card">Vinyl inventory will be available when its Google Sheet is connected. You can still test the label scanner.</div>';return}
   $('statusLine').textContent='Loading…';
   try{
     const items=await call('getInventory',state.token,category,'');
     if(requestId!==state.inventoryRequest || category!==state.category)return;
-    state.allInventory=items;populateBayFilter();$('bayFilter').disabled=false;applyInventoryFilters();
+    state.allInventory=items;populateBayFilter();$('bayFilter').disabled=false;$('locationFilter').disabled=false;applyInventoryFilters();
   }catch(err){ $('statusLine').textContent=''; toast(err.message,true); }
 }
 
@@ -108,9 +111,35 @@ function populateBayFilter(){
 function applyInventoryFilters(){
   if(state.category==='vinyl' && !state.vinylConfigured)return;
   const bay=$('bayFilter').value,terms=$('searchInput').value.trim().toLowerCase().split(/\s+/).filter(Boolean);
-  state.inventory=state.allInventory.filter(item=>(!bay || item.sourceSheet===bay) && terms.every(term=>JSON.stringify(item).toLowerCase().includes(term)));
+  const bayItems=state.allInventory.filter(item=>!bay || item.sourceSheet===bay);
+  populateLocationFilter(bayItems);
+  const location=$('locationFilter').value;
+  state.inventory=bayItems.filter(item=>(!location || locationKey(item)===location) && terms.every(term=>JSON.stringify(item).toLowerCase().includes(term)));
+  state.inventory.sort((a,b)=>compareInventoryItems(a,b,$('sortOrder').value));
   renderInventory();
-  $('statusLine').textContent=`${state.inventory.length} of ${state.allInventory.length} ${state.category} item${state.inventory.length===1?'':'s'}${bay?' · '+bay:''}`;
+  $('statusLine').textContent=`${state.inventory.length} of ${state.allInventory.length} ${state.category} item${state.inventory.length===1?'':'s'}${bay?' · '+bay:''}${location?' · Location '+(location==='__NO_LOCATION__'?'not set':location):''}`;
+}
+
+function locationKey(item){return String(item.location||'').trim() || '__NO_LOCATION__';}
+function populateLocationFilter(items){
+  const selected=$('locationFilter').value;
+  const locations=[...new Set(items.map(locationKey))].sort((a,b)=>a==='__NO_LOCATION__'?1:b==='__NO_LOCATION__'?-1:a.localeCompare(b,undefined,{numeric:true,sensitivity:'base'}));
+  $('locationFilter').innerHTML='<option value="">All locations</option>'+locations.map(location=>`<option value="${escAttr(location)}">${location==='__NO_LOCATION__'?'Not set':esc(location)} (${items.filter(item=>locationKey(item)===location).length})</option>`).join('');
+  $('locationFilter').value=locations.includes(selected)?selected:'';
+}
+function compareInventoryItems(a,b,mode){
+  const byName=()=>String(a.name||'').localeCompare(String(b.name||''),undefined,{numeric:true,sensitivity:'base'});
+  if(mode.startsWith('quantity-')){
+    const aq=Number.isFinite(a.quantity)?a.quantity:null,bq=Number.isFinite(b.quantity)?b.quantity:null;
+    if(aq===null || bq===null)return aq===bq?byName():aq===null?1:-1;
+    return (mode==='quantity-desc'?bq-aq:aq-bq) || byName();
+  }
+  if(mode.startsWith('location-')){
+    const al=String(a.location||'').trim(),bl=String(b.location||'').trim();
+    if(!al || !bl)return al===bl?byName():!al?1:-1;
+    return (mode==='location-desc'?-1:1)*al.localeCompare(bl,undefined,{numeric:true,sensitivity:'base'}) || byName();
+  }
+  return (mode==='name-desc'?-1:1)*byName();
 }
 
 function renderInventory(){
