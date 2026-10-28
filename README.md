@@ -1,153 +1,43 @@
-# Flair Flooring Inventory — MVP
+# Flair Flooring Inventory
 
-A mobile-friendly internal inventory app for Flair Flooring using:
+Mobile inventory app hosted by Google Apps Script, with Google Sheets as the source of truth. GitHub Pages hosts the separate camera/OCR scanner.
 
-- **GitHub** for source control
-- **Google Apps Script** for the main live app and secure server-side logic
-- **GitHub Pages** only for the camera-scanner helper page
-- **Google Sheets** as the inventory source of truth
+## Features
 
-No Vercel or Lovable is required.
+- Carpet search, location/bay, add/subtract feet, and add new rolls into the first row with a blank carpet name.
+- Estimated quantities retain their E- prefix. Dimension remnants such as E-11x10 are displayed and cannot receive linear-foot adjustments.
+- Tile search, SKU/location/side, whole-box changes, and total SF recalculated as boxes times SF/box.
+- History records employee, timestamp, source tab, action, and before/after quantities.
+- Approved email/PIN login with admin, employee, and view roles. Login attempts are limited; sessions expire and revoked users lose access.
+- Vinyl remains scaffolded until its sheet is configured.
+- Scanner supports camera capture, photo upload, OCR, and manual correction. Results return to the app using a checked origin, popup source, and nonce. Inventory credentials are never sent to the scanner.
 
-## Current MVP scope
+## Files and deployment
 
-### Carpet
-- View/search current rolls and locations
-- Preserve `E-95` style estimated footage
-- Add/subtract footage
-- Add a new carpet roll from the app
-- Write changes directly to the existing carpet workbook
+This GitHub repository keeps Apps Script files at its root, alongside scanner.html. Copy .clasp.json.example to .clasp.json and set the existing script ID. Never commit .clasprc.json or employee credentials.
 
-### Tile
-- View/search tile inventory
-- Show boxes, SF/box, total SF, location, side, SKU, grout
-- Add/subtract whole boxes
-- Recalculate total SF from `boxes × SF/box`
-- Write changes directly to the existing tile workbook
+The local working copy groups Apps Script files in apps-script/, the scanner in docs/, and checks in tests/. Its local .clasp.json uses rootDir apps-script.
 
-### Vinyl
-- Adapter is included and becomes active when `VINYL_SPREADSHEET_ID` is configured
-- Designed for code + thickness + boxes + SF/box
-- Camera OCR helper reads printed labels such as `1194-1` and `4.5 mm`
+Use Google's clasp tool to push source, create a version, and update the existing deployment. Keep the webapp section in appsscript.json; otherwise a command-line version can lose its web-app entry point. Use MYSELF during testing and ANYONE_ANONYMOUS for the employee email/PIN deployment, executing as USER_DEPLOYING.
 
-### History
-- Every app adjustment is appended to an `App History` sheet in the corresponding workbook
-- Records user, timestamp, before/after quantity, reason, notes, and source sheet
+Publish GitHub Pages from main / root. The scanner URL is https://shloimyusb.github.io/flair-inventory-app/scanner.html.
 
-## Security model
+## Safe setup
 
-The live Apps Script web app is deployed as the owner, so employees do **not** need direct access to the Google Sheets.
+Run setupTestInventory from the Apps Script editor as the project owner. It creates separate TEST carpet/tile workbooks, initializes IDs there, and creates test employee/view accounts. The generated test PIN is stored only in Script Properties as TEST_LOGIN_PIN. The function refuses to repeat an existing setup.
 
-The app has its own approved-user list using email + PIN. PINs are stored as SHA-256 hashes in Apps Script Script Properties. Login sessions expire from Apps Script cache after approximately 6 hours.
+After validating the hosted app, run setupProductionInventory as the owner. It verifies both live workbook schemas, copies their tabs into backup workbooks, adds Inventory ID columns/IDs without changing quantities, configures the supplied live spreadsheet IDs, removes test accounts, and creates the owner's admin login. Backup IDs and initial admin credentials are stored in Script Properties. The function refuses to repeat a completed production setup.
 
-For a small internal warehouse MVP this is simple and works with employees who have different email providers. A stronger SSO layer can be added later without changing the inventory architecture.
+Editor setup commands check the active/effective Google account. Other internal helpers end in an underscore and cannot be called through google.script.run.
 
-## One-time setup
+## Add employees
 
-### 1. Create an Apps Script project
+In the editor, create a temporary wrapper that calls setInventoryUser_ with the approved email, name, role (admin, employee, or view), and a unique strong PIN. Start the wrapper with requireProjectOwner_(). Run it once, then remove the wrapper before pushing source. Keep all employee details out of GitHub. The initial admin PIN can also be rotated this way; remove INITIAL_ADMIN_PIN afterward.
 
-Create a standalone Apps Script project and copy these files into it, or use `clasp` to push the repository.
+## Validation
 
-### 2. Script Properties
+Run node check.cjs in this repository, or node tests/check.cjs in the grouped local copy. Checks cover syntax, E- preservation, dimension blocking, box/SF writes, history, invalid quantities, missing sessions, view-only rejection, and lock release.
 
-In **Apps Script → Project Settings → Script Properties**, add:
+Hosted checks use only TEST workbooks: subtract/add carpet footage, add a new roll, subtract/add tile boxes, inspect history, test view-only access, and verify scanner results return to the app. Live production quantities should only be read during deployment verification.
 
-- `CARPET_SPREADSHEET_ID` = the ID from the carpet Google Sheet URL
-- `TILE_SPREADSHEET_ID` = the ID from the tile Google Sheet URL
-- `VINYL_SPREADSHEET_ID` = add later when the vinyl workbook is ready
-- `SCANNER_URL` = the GitHub Pages URL for `scanner.html` once Pages is enabled
-
-Only the raw spreadsheet ID is needed, not the entire URL.
-
-### 3. Initialize IDs
-
-Run this function once from the Apps Script editor:
-
-```javascript
-initializeInventory_()
-```
-
-It detects inventory tabs by their headers, skips tabs containing `Master`, adds an `Inventory ID` column where needed, and gives populated rows a permanent ID.
-
-**Important:** this intentionally changes the source sheets by adding the `Inventory ID` column. Make a backup first if you want a rollback copy.
-
-### 4. Add approved users
-
-Run once per user from the editor:
-
-```javascript
-setInventoryUser_('employee@example.com', 'Employee Name', 'employee', '4826')
-```
-
-Roles:
-
-- `admin` — full access
-- `employee` — view/add/subtract/add rolls
-- `view` — view only
-
-### 5. Deploy
-
-Apps Script → **Deploy → New deployment → Web app**
-
-- Execute as: **Me**
-- Who has access: **Anyone**
-
-The public deployment only shows the app login. Sheet access remains server-side under the Apps Script owner's account.
-
-## Important behavior
-
-### Carpet estimated values
-
-`E-95` is parsed as 95 feet with `estimated = true`.
-
-- subtract 20 → `E-75`
-- add 10 → `E-105`
-
-Plain `95` stays exact.
-
-Dimension-style remnants such as `E-11x10` are displayed but are intentionally blocked from numeric add/subtract in this first build because a single linear-foot adjustment is ambiguous.
-
-### Tile / vinyl
-
-Adjustments are in whole boxes. If `SF/Box` exists, `Total on hand` is recalculated automatically.
-
-### New carpet rolls
-
-The app finds the first row where `Name of carpet` is blank rather than appending after thousands of preformatted rows.
-
-## GitHub workflow with clasp
-
-Install clasp locally:
-
-```bash
-npm install -g @google/clasp
-clasp login
-```
-
-Create the Apps Script project first, copy `.clasp.json.example` to `.clasp.json`, paste the Apps Script project ID, then:
-
-```bash
-clasp push
-```
-
-Later changes can be committed to GitHub and pushed to Apps Script with `clasp push`.
-
-## Next build step
-
-Provide the vinyl Google Sheet so its exact headers can be mapped instead of relying on the generic vinyl aliases in `Config.gs`.
-
-## Camera scanner hosting
-
-Apps Script HTML Service blocks `navigator.mediaDevices.getUserMedia()` because camera/microphone APIs require permissions that its sandbox does not grant. Google recommends hosting camera functionality on a separate domain.
-
-This repository therefore includes `scanner.html`. Publish that single page with GitHub Pages and put its final HTTPS URL into the `SCANNER_URL` Script Property. The scanner opens in a separate window, reads the label locally in the browser with Tesseract.js, then sends only the detected code/thickness back to the Apps Script app with `postMessage`.
-
-The main inventory app still lives in Apps Script and all Google Sheet reads/writes stay server-side.
-
-
-## Deployment status and safe validation
-Local checks passed. Hosted end-to-end testing is still pending Google authorization.
-Run configureTestInventory_ first to create isolated test workbooks, then add an approved user through an editor-only helper calling setInventoryUser_. Test E-95 subtract 20 = E-75, add 10 = E-85; add a new roll; tile 10 boxes subtract 2 = 8 boxes / 100 SF; verify history and view-only rejection. Do not switch to configureProduction_ until these checks pass.
-The public GitHub repository uses flat Apps Script source files plus scanner.html; deploy Pages from main/root. Locally the app sources are in apps-script and scanner in docs.
-Setup helpers have trailing underscores and cannot be invoked through google.script.run. Writes use a script lock. No credentials or employee PINs belong in GitHub.
-
+Google Sheets and Apps Script do not provide a cross-service transaction here. The script lock serializes app writes; users should refresh and check history before retrying an adjustment after a connection error. Direct concurrent edits in Google Sheets are outside the app lock.

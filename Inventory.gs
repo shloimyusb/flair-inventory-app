@@ -35,7 +35,8 @@ function getInventory(token, category, query) {
 
   const q = String(query || '').trim().toLowerCase();
   if (!q) return items;
-  return items.filter(item => JSON.stringify(item).toLowerCase().includes(q));
+  const terms = q.split(/\s+/);
+  return items.filter(item => terms.every(term => JSON.stringify(item).toLowerCase().includes(term)));
 }
 
 function readInventory_(category) {
@@ -258,6 +259,7 @@ function addCarpetRoll_(token, data) {
   if (!sheetName) throw new Error('Choose a carpet sheet.');
   if (!Number.isFinite(originalQty) || originalQty <= 0) throw new Error('Original footage must be greater than zero.');
   if (!Number.isFinite(currentQty) || currentQty < 0) throw new Error('Current footage must be zero or greater.');
+  if (data.price !== '' && data.price !== undefined && data.price !== null && (!Number.isFinite(Number(data.price)) || Number(data.price) < 0)) throw new Error('Price must be a valid nonnegative number.');
 
   const ss = getSpreadsheet_('carpet');
   const sheet = ss.getSheetByName(sheetName);
@@ -269,6 +271,7 @@ function addCarpetRoll_(token, data) {
   const map = makeHeaderMap_(headers);
   const nameCol = getColumn_(map, 'carpet', 'name');
   const rowNumber = firstBlankInventoryRow_(sheet, nameCol);
+  if (rowNumber > sheet.getMaxRows()) sheet.insertRowsAfter(sheet.getMaxRows(),rowNumber-sheet.getMaxRows());
   const id = `CAR-${Utilities.getUuid().slice(0, 8).toUpperCase()}`;
 
   setIfPresent_(sheet, rowNumber, map, 'carpet', 'inventoryId', id);
@@ -286,10 +289,10 @@ function addCarpetRoll_(token, data) {
 
   const bayCol = getColumn_(map, 'carpet', 'bay');
   if (bayCol >= 0) {
-    sheet.getRange(rowNumber, bayCol + 1).setValue(data.bay || '');
+    sheet.getRange(rowNumber, bayCol + 1).setValue(literalValue_(data.bay || ''));
   } else {
     const tsCol = getColumn_(map, 'carpet', 'timestamp');
-    if (tsCol >= 0 && tsCol + 1 < sheet.getMaxColumns() && tsCol + 1 !== getColumn_(map, 'carpet', 'inventoryId')) sheet.getRange(rowNumber, tsCol + 2).setValue(data.bay || '');
+    if (tsCol >= 0 && tsCol + 1 < sheet.getMaxColumns() && tsCol + 1 !== getColumn_(map, 'carpet', 'inventoryId')) sheet.getRange(rowNumber, tsCol + 2).setValue(literalValue_(data.bay || ''));
   }
 
   appendHistory_('carpet', {
@@ -359,6 +362,7 @@ function ensureInventoryIdColumn_(sheet, category) {
   let idCol = getColumn_(map, category, 'inventoryId');
   if (idCol < 0) {
     idCol = lastCol;
+    if (idCol >= sheet.getMaxColumns()) sheet.insertColumnsAfter(sheet.getMaxColumns(),1);
     sheet.getRange(1, idCol + 1).setValue(APP.INVENTORY_ID_HEADER);
     map = makeHeaderMap_(sheet.getRange(1, 1, 1, idCol + 1).getDisplayValues()[0]);
   }
@@ -368,13 +372,14 @@ function ensureInventoryIdColumn_(sheet, category) {
   const names = sheet.getRange(2, nameCol + 1, currentLastRow - 1, 1).getDisplayValues();
   const ids = sheet.getRange(2, idCol + 1, currentLastRow - 1, 1).getDisplayValues();
   const prefix = category === 'carpet' ? 'CAR' : category === 'tile' ? 'TILE' : 'VIN';
-  const writes = [];
+  let changed = false;
   for (let i = 0; i < names.length; i++) {
     if (String(names[i][0]).trim() && !String(ids[i][0]).trim()) {
-      writes.push({ row: i + 2, id: `${prefix}-${Utilities.getUuid().slice(0, 8).toUpperCase()}` });
+      ids[i][0] = `${prefix}-${Utilities.getUuid().toUpperCase()}`;
+      changed = true;
     }
   }
-  writes.forEach(w => sheet.getRange(w.row, idCol + 1).setValue(w.id));
+  if (changed) sheet.getRange(2,idCol+1,ids.length,1).setValues(ids);
 }
 
 function firstBlankInventoryRow_(sheet, nameCol) {
@@ -388,7 +393,7 @@ function firstBlankInventoryRow_(sheet, nameCol) {
 
 function setIfPresent_(sheet, rowNumber, map, category, field, value) {
   const col = getColumn_(map, category, field);
-  if (col >= 0) sheet.getRange(rowNumber, col + 1).setValue(value);
+  if (col >= 0) sheet.getRange(rowNumber, col + 1).setValue(literalValue_(value));
 }
 
 function updateTimestamp_(sheet, rowNumber, map, category) {
@@ -407,7 +412,11 @@ function appendHistory_(category, entry) {
   sheet.appendRow([
     new Date(), category, entry.inventoryId, entry.product, entry.action, entry.amount, entry.unit,
     entry.before, entry.after, entry.employee, entry.email, entry.reason, entry.notes, entry.sourceSheet,
-  ]);
+  ].map(literalValue_));
+}
+
+function literalValue_(value) {
+  return typeof value === 'string' && /^[=+@]/.test(value) ? "'" + value : value;
 }
 
 function trimNumber_(n) {

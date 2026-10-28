@@ -43,11 +43,23 @@ function setInventoryUser_(email, name, role, pin) {
 }
 
 function loginUser(email, pin) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try { return loginUser_(email, pin); } finally { lock.releaseLock(); }
+}
+
+function loginUser_(email, pin) {
   email = String(email || '').trim().toLowerCase();
+  const cache = CacheService.getScriptCache();
+  const key = 'login-failures:' + hashPin_(email);
+  const failures = Number(cache.get(key) || 0);
+  if (failures >= 5) throw new Error('Too many login attempts. Try again in 15 minutes.');
   const user = getUsers_().find(u => String(u.email).toLowerCase() === email && u.active !== false);
   if (!user || user.pinHash !== hashPin_(pin)) {
+    cache.put(key, String(failures + 1), 900);
     throw new Error('Invalid email or PIN.');
   }
+  cache.remove(key);
 
   const token = Utilities.getUuid() + Utilities.getUuid();
   const session = { email: user.email, name: user.name || user.email, role: user.role || 'employee' };
@@ -64,7 +76,10 @@ function requireSession_(token, writeRequired) {
   if (!token) throw new Error('Your session has expired. Please sign in again.');
   const raw = CacheService.getScriptCache().get(`session:${token}`);
   if (!raw) throw new Error('Your session has expired. Please sign in again.');
-  const user = JSON.parse(raw);
+  const session = JSON.parse(raw);
+  const approved = getUsers_().find(u => u.email === session.email && u.active !== false);
+  if (!approved || !['admin', 'employee', 'view'].includes(approved.role)) throw new Error('Your access has been revoked. Please sign in again.');
+  const user = {email: approved.email, name: approved.name || approved.email, role: approved.role};
   if (writeRequired && user.role === 'view') throw new Error('You do not have permission to change inventory.');
   return user;
 }

@@ -8,6 +8,7 @@ const state = {
   adjustItem: null,
   adjustAction: 'add',
   scannerUrl: '',
+  vinylConfigured: false,
 };
 
 const $ = id => document.getElementById(id);
@@ -53,6 +54,7 @@ async function login(e){
 async function bootstrap(){
   const data = await call('getAppBootstrap',state.token);
   state.user=data.user; state.carpetSheets=data.carpetSheets||[]; state.scannerUrl=data.scannerUrl||'';
+  state.vinylConfigured=!!data.vinylConfigured;
   $('userName').textContent=state.user.name;
   $('loginView').classList.add('hidden'); $('appView').classList.remove('hidden');
   populateRollSheets();
@@ -77,6 +79,7 @@ function switchCategory(category){
 }
 
 async function loadInventory(force){
+  if(state.category==='vinyl' && !state.vinylConfigured){state.inventory=[];$('statusLine').textContent='Vinyl sheet not connected yet.';$('inventoryGrid').innerHTML='<div class="card">Vinyl inventory will be available when its Google Sheet is connected. You can still test the label scanner.</div>';return}
   $('statusLine').textContent='Loading…';
   try{
     state.inventory=await call('getInventory',state.token,state.category,$('searchInput').value);
@@ -147,7 +150,7 @@ async function loadHistory(){
 
 function openScanner(){
   if(!state.scannerUrl){toast('The camera scanner is not configured yet. You can still search vinyl manually.',true);return}
-  try{window.open(state.scannerUrl,'flairScanner','popup,width=720,height=850')}catch(e){toast('Could not open the scanner window.',true)}
+  try{const url=new URL(state.scannerUrl);state.scanNonce=crypto.randomUUID();url.searchParams.set('returnOrigin',location.origin);url.searchParams.set('nonce',state.scanNonce);state.scannerWindow=window.open(url.toString(),'flairScanner','popup,width=720,height=850');if(!state.scannerWindow)toast('Allow pop-ups to open the scanner.',true)}catch(e){toast('Could not open the scanner window.',true)}
 }
 function handleScannerMessage(event){
   if(!state.scannerUrl)return;
@@ -155,10 +158,10 @@ function handleScannerMessage(event){
   try{expectedOrigin=new URL(state.scannerUrl).origin}catch(e){}
   if(expectedOrigin && event.origin!==expectedOrigin)return;
   const data=event.data||{};
-  if(data.type!=='flair-vinyl-scan')return;
+  if(data.type!=='flair-vinyl-scan' || event.source!==state.scannerWindow || data.nonce!==state.scanNonce)return;
   const code=String(data.code||'').trim(); const thickness=String(data.thickness||'').trim();
   if(!code && !thickness){toast('No code or thickness was detected.',true);return}
-  $('searchInput').value=code || thickness;
+  $('searchInput').value=[code,thickness].filter(Boolean).join(' ');
   toast(`Scanner read ${code||'unknown code'}${thickness?` · ${thickness} mm`:''}.`);
   loadInventory(true);
 }

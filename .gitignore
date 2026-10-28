@@ -1,3 +1,10 @@
 .clasp.json
 .DS_Store
 node_modules/
+
+.pnpm-store/
+.clasprc.json
+
+
+.oauth-*
+connect-google.mjs

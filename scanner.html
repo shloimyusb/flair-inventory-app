@@ -16,9 +16,10 @@
       <div class="camera"><video id="video" playsinline autoplay></video><canvas id="canvas" class="hidden"></canvas></div>
       <p id="status" class="status">Starting camera…</p>
       <div class="actions"><button id="capture" class="btn primary">Capture & Read</button><button id="retry" class="btn secondary">Restart Camera</button></div>
+      <label>Or upload a label photo<input id="photoInput" type="file" accept="image/*"></label>
     </div>
 
-    <div id="resultCard" class="card hidden">
+    <div id="resultCard" class="card">
       <div class="result">
         <div class="field"><small>Product code</small><strong id="codeText">—</strong></div>
         <div class="field"><small>Thickness</small><strong id="thicknessText">—</strong></div>
@@ -35,19 +36,22 @@
     let stream=null;
     const $=id=>document.getElementById(id);
     async function startCamera(){
-      stopCamera(); $('resultCard').classList.add('hidden'); $('status').textContent='Starting camera…';
+      stopCamera(); $('status').textContent='Starting camera… You can also upload a photo or enter a code below.';
       try{stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'}},audio:false});$('video').srcObject=stream;$('status').textContent='Camera ready.'}
       catch(e){$('status').textContent='Camera access was blocked. You can still enter the code and thickness manually.';$('resultCard').classList.remove('hidden')}
     }
     function stopCamera(){if(stream){stream.getTracks().forEach(t=>t.stop());stream=null}}
     async function capture(){
       const v=$('video'),c=$('canvas'); if(!v.videoWidth){$('status').textContent='Camera is not ready yet.';return}
-      c.width=v.videoWidth;c.height=v.videoHeight;c.getContext('2d').drawImage(v,0,0,c.width,c.height);stopCamera();$('status').textContent='Reading label…';
+      c.width=v.videoWidth;c.height=v.videoHeight;c.getContext('2d').drawImage(v,0,0,c.width,c.height);stopCamera();await readLabel(c);
+    }
+    async function readLabel(source){
+      $('status').textContent='Reading label…';
       try{
-        const r=await Tesseract.recognize(c,'eng',{logger:m=>{if(m.status==='recognizing text')$('status').textContent=`Reading label… ${Math.round((m.progress||0)*100)}%`}});
+        const r=await Tesseract.recognize(source,'eng',{logger:m=>{if(m.status==='recognizing text')$('status').textContent=`Reading label… ${Math.round((m.progress||0)*100)}%`}});
         const text=r.data.text||'';
         const code=(text.match(/\bCode\s*[:#-]?\s*([A-Z0-9]+(?:[-–—][A-Z0-9]+)+)/i)||text.match(/\b([0-9]{3,6}(?:[-–—][0-9A-Z]{1,5})+)\b/i)||[])[1]||'';
-        const thickness=(text.match(/(?:Overall\s+Thickness[\s\S]{0,40})?(\d+(?:\.\d+)?)\s*mm/i)||[])[1]||'';
+        const thickness=(text.match(/Overall\s+Thickness\s*[:\-]?\s*(\d+(?:\.\d+)?)\s*mm/i)||text.match(/\b(\d+(?:\.\d+)?)\s*mm/i)||[])[1]||'';
         const normalizedCode=code.replace(/[–—]/g,'-');
         $('codeText').textContent=normalizedCode||'Not found';$('thicknessText').textContent=thickness?`${thickness} mm`:'Not found';
         $('codeInput').value=normalizedCode;$('thicknessInput').value=thickness;$('resultCard').classList.remove('hidden');$('status').textContent='Check the result before using it.';
@@ -55,8 +59,11 @@
     }
     function sendResult(){
       const code=$('codeInput').value.trim().replace(/[–—]/g,'-'); const thickness=$('thicknessInput').value.trim();
-      if(window.opener){window.opener.postMessage({type:'flair-vinyl-scan',code,thickness},'*');window.close()} else {$('status').textContent='Return to the inventory app and enter this result manually.'}
+      if(!code && !thickness){$('status').textContent='Enter a product code or thickness first.';return}
+      const params=new URLSearchParams(location.search),origin=params.get('returnOrigin'),nonce=params.get('nonce');
+      if(window.opener && origin && /^https:\/\/([a-z0-9-]+-script\.googleusercontent\.com|script\.google\.com)$/.test(origin)){window.opener.postMessage({type:'flair-vinyl-scan',code,thickness,nonce},origin);window.close()} else {$('status').textContent='Return to the inventory app and enter this result manually.'}
     }
+    $('photoInput').addEventListener('change',e=>{const file=e.target.files[0];if(file){stopCamera();readLabel(file)}});
     $('capture').addEventListener('click',capture);$('retry').addEventListener('click',startCamera);$('scanAgain').addEventListener('click',startCamera);$('useResult').addEventListener('click',sendResult);window.addEventListener('beforeunload',stopCamera);startCamera();
   </script>
 </body>
