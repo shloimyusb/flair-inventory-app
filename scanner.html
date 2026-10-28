@@ -1,0 +1,63 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Flair Vinyl Label Scanner</title>
+  <style>
+    :root{font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#111827;background:#f3f4f6}*{box-sizing:border-box}body{margin:0;padding:18px;background:#f3f4f6}.wrap{max-width:720px;margin:auto;display:grid;gap:14px}.card{background:white;border:1px solid #e5e7eb;border-radius:18px;padding:16px}.camera{background:#111827;border-radius:14px;overflow:hidden;min-height:300px;display:grid;place-items:center}video,canvas{width:100%;max-height:65vh;object-fit:contain}.hidden{display:none!important}.btn{border:0;border-radius:12px;padding:12px 16px;font-weight:750;cursor:pointer}.primary{background:#111827;color:#fff}.secondary{background:#e5e7eb;color:#111827}.actions{display:grid;grid-template-columns:1fr 1fr;gap:10px}.result{display:grid;grid-template-columns:1fr 1fr;gap:10px}.field{background:#f9fafb;border-radius:12px;padding:12px}.field small{display:block;color:#6b7280;font-weight:700;text-transform:uppercase;letter-spacing:.04em;margin-bottom:4px}.field strong{font-size:22px}.status{color:#6b7280}.manual{display:grid;grid-template-columns:1fr 1fr;gap:10px}input{width:100%;border:1px solid #d1d5db;border-radius:12px;padding:12px 13px;font:inherit}@media(max-width:560px){.actions,.result,.manual{grid-template-columns:1fr}}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card">
+      <h1>Scan Vinyl Label</h1>
+      <p class="status">Aim at the printed label. We’ll look for a product code such as <strong>1194-1</strong> and thickness such as <strong>4.5 mm</strong>.</p>
+      <div class="camera"><video id="video" playsinline autoplay></video><canvas id="canvas" class="hidden"></canvas></div>
+      <p id="status" class="status">Starting camera…</p>
+      <div class="actions"><button id="capture" class="btn primary">Capture & Read</button><button id="retry" class="btn secondary">Restart Camera</button></div>
+    </div>
+
+    <div id="resultCard" class="card hidden">
+      <div class="result">
+        <div class="field"><small>Product code</small><strong id="codeText">—</strong></div>
+        <div class="field"><small>Thickness</small><strong id="thicknessText">—</strong></div>
+      </div>
+      <div class="manual">
+        <label>Correct code<input id="codeInput"></label>
+        <label>Correct thickness (mm)<input id="thicknessInput" inputmode="decimal"></label>
+      </div>
+      <div class="actions" style="margin-top:12px"><button id="useResult" class="btn primary">Use This Result</button><button id="scanAgain" class="btn secondary">Scan Again</button></div>
+    </div>
+  </div>
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+  <script>
+    let stream=null;
+    const $=id=>document.getElementById(id);
+    async function startCamera(){
+      stopCamera(); $('resultCard').classList.add('hidden'); $('status').textContent='Starting camera…';
+      try{stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'}},audio:false});$('video').srcObject=stream;$('status').textContent='Camera ready.'}
+      catch(e){$('status').textContent='Camera access was blocked. You can still enter the code and thickness manually.';$('resultCard').classList.remove('hidden')}
+    }
+    function stopCamera(){if(stream){stream.getTracks().forEach(t=>t.stop());stream=null}}
+    async function capture(){
+      const v=$('video'),c=$('canvas'); if(!v.videoWidth){$('status').textContent='Camera is not ready yet.';return}
+      c.width=v.videoWidth;c.height=v.videoHeight;c.getContext('2d').drawImage(v,0,0,c.width,c.height);stopCamera();$('status').textContent='Reading label…';
+      try{
+        const r=await Tesseract.recognize(c,'eng',{logger:m=>{if(m.status==='recognizing text')$('status').textContent=`Reading label… ${Math.round((m.progress||0)*100)}%`}});
+        const text=r.data.text||'';
+        const code=(text.match(/\bCode\s*[:#-]?\s*([A-Z0-9]+(?:[-–—][A-Z0-9]+)+)/i)||text.match(/\b([0-9]{3,6}(?:[-–—][0-9A-Z]{1,5})+)\b/i)||[])[1]||'';
+        const thickness=(text.match(/(?:Overall\s+Thickness[\s\S]{0,40})?(\d+(?:\.\d+)?)\s*mm/i)||[])[1]||'';
+        const normalizedCode=code.replace(/[–—]/g,'-');
+        $('codeText').textContent=normalizedCode||'Not found';$('thicknessText').textContent=thickness?`${thickness} mm`:'Not found';
+        $('codeInput').value=normalizedCode;$('thicknessInput').value=thickness;$('resultCard').classList.remove('hidden');$('status').textContent='Check the result before using it.';
+      }catch(e){$('status').textContent='Could not read the label. Try again with less glare or enter it manually.';$('resultCard').classList.remove('hidden')}
+    }
+    function sendResult(){
+      const code=$('codeInput').value.trim().replace(/[–—]/g,'-'); const thickness=$('thicknessInput').value.trim();
+      if(window.opener){window.opener.postMessage({type:'flair-vinyl-scan',code,thickness},'*');window.close()} else {$('status').textContent='Return to the inventory app and enter this result manually.'}
+    }
+    $('capture').addEventListener('click',capture);$('retry').addEventListener('click',startCamera);$('scanAgain').addEventListener('click',startCamera);$('useResult').addEventListener('click',sendResult);window.addEventListener('beforeunload',stopCamera);startCamera();
+  </script>
+</body>
+</html>
