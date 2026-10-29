@@ -7,6 +7,7 @@ const state = {
   allInventory: [],
   inventoryRequest: 0,
   loadedCategories: {},
+  pendingCategories: {},
   visibleCount: 60,
   carpetSheets: [],
   adjustItem: null,
@@ -61,6 +62,7 @@ async function login(e){
 async function bootstrap(){
   const data = await call('getAppBootstrap',state.token);
   state.loadedCategories={carpet:{items:data.inventory||[],loadedAt:Date.now()}};
+  state.pendingCategories={};
   state.user=data.user; state.carpetSheets=data.carpetSheets||[]; state.scannerUrl=data.scannerUrl||'';
   state.vinylConfigured=!!data.vinylConfigured;
   $('testBanner').classList.toggle('hidden',data.environment==='production');
@@ -71,10 +73,13 @@ async function bootstrap(){
   const scan=[$('initialScanCode').value,$('initialScanThickness').value].filter(Boolean).join(' ');
   if(scan){switchCategory('vinyl');$('searchInput').value=scan;$('initialScanCode').value='';$('initialScanThickness').value='';}
   else {await switchCategory('carpet');}
+  // Warm the other tabs while the employee is viewing the first category.
+  fetchInventoryCategory('tile',false).catch(()=>{});
+  if(state.vinylConfigured)fetchInventoryCategory('vinyl',false).catch(()=>{});
 }
 
 function showLogin(){ $('loginView').classList.remove('hidden'); $('appView').classList.add('hidden'); }
-async function logout(){ try{await call('logoutUser',state.token)}catch(e){} localStorage.removeItem('flairInventoryToken'); state.token=''; state.user=null;state.loadedCategories={};state.allInventory=[];state.inventory=[];showLogin(); }
+async function logout(){ try{await call('logoutUser',state.token)}catch(e){} localStorage.removeItem('flairInventoryToken'); state.token=''; state.user=null;state.loadedCategories={};state.pendingCategories={};state.allInventory=[];state.inventory=[];showLogin(); }
 
 function switchView(view){
   document.querySelectorAll('.nav-btn').forEach(b=>b.classList.toggle('active',b.dataset.view===view));
@@ -93,17 +98,42 @@ function switchCategory(category){
 
 async function loadInventory(force){
   const requestId=++state.inventoryRequest,category=state.category;
-  $('bayFilter').disabled=true;
-  $('locationFilter').disabled=true;
-  if(category==='vinyl' && !state.vinylConfigured){state.inventory=[];state.allInventory=[];populateBayFilter();$('statusLine').textContent='Vinyl sheet not connected yet.';$('inventoryGrid').innerHTML='<div class="card">Vinyl inventory will be available when its Google Sheet is connected. You can still test the label scanner.</div>';return}
+  if(category==='vinyl' && !state.vinylConfigured){state.inventory=[];state.allInventory=[];populateBayFilter();populateLocationFilter([]);$('bayFilter').disabled=true;$('locationFilter').disabled=true;$('statusLine').textContent='Vinyl sheet not connected yet.';$('inventoryGrid').innerHTML='<div class="card">Vinyl inventory will be available when its Google Sheet is connected. You can still test the label scanner.</div>';return}
   const loaded=state.loadedCategories[category];
-  if(!force && loaded && Date.now()-loaded.loadedAt<120000){state.allInventory=loaded.items;populateBayFilter();$('bayFilter').disabled=false;$('locationFilter').disabled=false;applyInventoryFilters();return;}
-  $('statusLine').textContent='Loading…';
+  if(loaded){
+    state.allInventory=loaded.items;populateBayFilter();$('bayFilter').disabled=false;$('locationFilter').disabled=false;applyInventoryFilters();
+    if(!force && Date.now()-loaded.loadedAt<120000)return;
+    $('statusLine').textContent+=force?' · Refreshing…':' · Checking for updates…';
+  } else {
+    state.inventory=[];state.allInventory=[];populateBayFilter();populateLocationFilter([]);$('bayFilter').disabled=true;$('locationFilter').disabled=true;
+    $('inventoryGrid').innerHTML='<div class="card">Loading '+esc(category)+' inventory…</div>';
+    $('statusLine').textContent='Loading…';
+  }
   try{
-    const items=await call('getInventory',state.token,category,'',!!force);
+    const items=await fetchInventoryCategory(category,!!force);
     if(requestId!==state.inventoryRequest || category!==state.category)return;
-    state.loadedCategories[category]={items,loadedAt:Date.now()};state.allInventory=items;populateBayFilter();$('bayFilter').disabled=false;$('locationFilter').disabled=false;applyInventoryFilters();
-  }catch(err){ $('statusLine').textContent=''; toast(err.message,true); }
+    state.allInventory=items;populateBayFilter();$('bayFilter').disabled=false;$('locationFilter').disabled=false;applyInventoryFilters();
+  }catch(err){
+    if(requestId!==state.inventoryRequest || category!==state.category)return;
+    $('statusLine').textContent=loaded?'Showing previously loaded inventory · Refresh failed':'Could not load '+category+' inventory. Try Refresh.';
+    toast(err.message,true);
+  }
+}
+
+function fetchInventoryCategory(category,force){
+  const pending=state.pendingCategories[category];
+  if(pending){
+    if(!force || pending.force)return pending.promise;
+    return pending.promise.catch(()=>{}).then(()=>fetchInventoryCategory(category,true));
+  }
+  const token=state.token,job={force:!!force};
+  state.pendingCategories[category]=job;
+  job.promise=call('getInventory',token,category,'',!!force).then(items=>{
+    if(state.token!==token)throw new Error('Session changed. Please sign in again.');
+    // Keep completed preloads even if the employee has moved to another tab.
+    state.loadedCategories[category]={items,loadedAt:Date.now()};return items;
+  }).finally(()=>{if(state.pendingCategories[category]===job)delete state.pendingCategories[category];});
+  return job.promise;
 }
 
 function populateBayFilter(){

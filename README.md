@@ -44,6 +44,7 @@ Google Sheets and Apps Script do not provide a cross-service transaction here. T
 
 
 ## Loading performance
-Startup returns the initial carpet inventory with the app configuration. Carpet tabs are read once each, and the inventory cache uses small chunks to stay below Google's per-entry limit. Recently loaded categories are reused for up to two minutes. Refresh bypasses the inventory cache, and app writes invalidate it. Direct sheet edits may take up to two minutes to appear without Refresh. A validated row index accelerates adjustments; moved rows fall back to an ID search. The interface initially renders 60 matching cards; search and filters still use the complete inventory.
+Startup returns the initial carpet inventory with the app configuration. Carpet tabs are read once each, and the inventory cache uses small chunks to stay below Google's per-entry limit. Previously loaded categories remain immediately available throughout the signed-in session; after two minutes they refresh in the background. Other configured categories preload after startup. Refresh bypasses the inventory cache, and app writes invalidate it. Direct sheet edits are checked when a tab is revisited after two minutes; use Refresh when current quantities are required. A validated row index accelerates adjustments; moved rows fall back to an ID search. The interface initially renders 60 matching cards; search and filters still use the complete inventory.
 Run node performance-check.cjs (or node tests/performance-check.cjs in the grouped local copy) to check cache sizing, invalidation, forced refresh, workbook isolation and row-index validation.
+
 
