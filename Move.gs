@@ -11,8 +11,12 @@ function moveInventory(token, payload) {
     if(!found)throw new Error('Item not found. Refresh and try again.');
     const {sheet,rowNumber,map,displayRow}=found,ss=getSpreadsheet_(category);
     const before=normalizeRow_(category,sheet.getName(),rowNumber,found.row,displayRow,map);
+    const editingSide=category==='tile' && Object.prototype.hasOwnProperty.call(payload,'side');
+    const side=editingSide?String(payload.side??'').trim():String(before.side||'');
+    if(editingSide && !['','Left','Right'].includes(side))throw new Error('Choose Left, Right or Not set.');
     const expected=payload.expected||{};
     if(expected.sourceSheet!==before.sourceSheet || String(expected.location||'')!==before.location || String(expected.bay||'')!==String(before.bay||''))throw new Error('This item was moved or edited since you opened it. Refresh and try again.');
+    if(editingSide && String(expected.side||'').trim()!==String(before.side||'').trim())throw new Error('Right / Left changed since you opened this item. Refresh and try again.');
     const destination=ss.getSheetByName(String(payload.sheetName||''));
     if(!destination || !isInventorySheet_(destination,category))throw new Error('Choose an inventory bay from the list.');
     const changingSheet=destination.getSheetId()!==sheet.getSheetId();
@@ -21,10 +25,12 @@ function moveInventory(token, payload) {
     let destinationMap=makeHeaderMap_(headers);
     const locationCol=getColumn_(destinationMap,category,'location');
     if(locationCol<0)throw new Error('The selected bay needs a Location column.');
+    const sideCol=getColumn_(destinationMap,category,'side');
+    if(editingSide && sideCol<0)throw new Error('The selected bay needs an R-L or Side column.');
     const sourceBayCol=moveBayColumn_(sourceHeaders,map,category);
     const destinationBayCol=moveBayColumn_(headers,destinationMap,category);
     if(destinationBayCol<0 && bay)throw new Error('The selected bay has no bay-notes column. Clear the bay notes or choose another bay.');
-    if(!changingSheet && location===before.location && bay===String(before.bay||''))return {ok:true,item:before,unchanged:true};
+    if(!changingSheet && location===before.location && bay===String(before.bay||'') && (!editingSide || side===String(before.side||'')))return {ok:true,item:before,unchanged:true};
     const requests=[];
     if(getColumn_(destinationMap,category,'inventoryId')<0){
       headers.push(APP.INVENTORY_ID_HEADER);destinationMap=makeHeaderMap_(headers);
@@ -44,7 +50,9 @@ function moveInventory(token, payload) {
     }
     requests.push(moveCellWrite_(destination.getSheetId(),destinationRow,locationCol,location));
     if(destinationBayCol>=0)requests.push(moveCellWrite_(destination.getSheetId(),destinationRow,destinationBayCol,bay));
+    if(editingSide)requests.push(moveCellWrite_(destination.getSheetId(),destinationRow,sideCol,side));
     const after=Object.assign({},before,{sourceSheet:destination.getName(),location});
+    if(category==='tile')after.side=side;
     if(sourceBayCol>=0 || destinationBayCol>=0)after.bay=bay;
     addMoveHistory_(requests,ss,category,payload.inventoryId,before,after,user);
     // Google validates the whole batch before applying any move or history write.
@@ -114,7 +122,7 @@ function addMoveHistory_(requests,ss,category,inventoryId,before,after,user){
     requests.push({addSheet:{properties:{sheetId:id,title:APP.HISTORY_SHEET,gridProperties:{rowCount:1000,columnCount:14,frozenRowCount:1}}}});
     requests.push({appendCells:{sheetId:id,rows:[{values:['Timestamp','Category','Inventory ID','Product','Action','Amount','Unit','Before','After','Employee','Email','Reason','Notes','Source Sheet'].map(s=>({userEnteredValue:{stringValue:s}}))}],fields:'userEnteredValue'}});
   }
-  const describe=item=>item.sourceSheet+' · Location '+(item.location||'not set')+(item.bay?' · '+item.bay:'');
+  const describe=item=>item.sourceSheet+' · Location '+(item.location||'not set')+(item.category==='tile'?' · Right / Left '+(item.side||'not set'):'')+(item.bay?' · '+item.bay:'');
   const cells=[Utilities.formatDate(new Date(),Session.getScriptTimeZone(),'yyyy-MM-dd HH:mm:ss'),category,inventoryId,before.name,'Moved','', '',describe(before),describe(after),user.name,user.email,'Location / bay change','Quantity and confirmation date unchanged',after.sourceSheet];
   requests.push({appendCells:{sheetId:id,rows:[{values:cells.map(value=>({userEnteredValue:{stringValue:String(value)}}))}],fields:'userEnteredValue'}});
 }

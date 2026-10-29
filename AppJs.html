@@ -230,12 +230,12 @@ function inventoryMeta(item){
   const meta=[];
   if(item.sku)meta.push(['SKU',item.sku]);if(item.code)meta.push(['Code',item.code]);if(item.thickness)meta.push(['Thickness',item.thickness]);
   meta.push(['Location',item.location||'Not set']);if(item.sourceSheet)meta.push(['Bay',item.sourceSheet]);
-  if(item.bay)meta.push(['Bay notes',item.bay]);if(item.side)meta.push(['Side',item.side]);if(item.grout)meta.push(['Grout',item.grout]);
+  if(item.bay)meta.push(['Bay notes',item.bay]);if(item.category==='tile')meta.push(['Right / Left',item.side||'Not set']);if(item.grout)meta.push(['Grout',item.grout]);
   if(item.category==='carpet'){meta.push(['Confirmed',String(item.confirmed).toLowerCase()==='true'?'Yes':'Not yet']);if(item.timestamp)meta.push(['Sheet date',item.timestamp]);}
   return meta;
 }
 function inventoryMetaField(item,label,value){
-  return ['Location','Bay','Bay notes'].includes(label) && state.user.role!=='view'?`<button type="button" class="meta-edit" data-move="${escAttr(label)}" aria-label="Change ${escAttr(label.toLowerCase())} for ${escAttr(item.name)}"><b>${esc(label)} <span aria-hidden="true">✎</span></b>${esc(value)}</button>`:`<div><b>${esc(label)}</b>${esc(value)}</div>`;
+  return ['Location','Bay','Bay notes','Right / Left'].includes(label) && state.user.role!=='view'?`<button type="button" class="meta-edit" data-move="${escAttr(label)}" aria-label="Change ${escAttr(label.toLowerCase())} for ${escAttr(item.name)}"><b>${esc(label)} <span aria-hidden="true">✎</span></b>${esc(value)}</button>`:`<div><b>${esc(label)}</b>${esc(value)}</div>`;
 }
 function inventoryActions(item){
   if(state.user.role==='view')return '<span class="muted">View only</span>';
@@ -248,12 +248,12 @@ function bindInventoryItem(element,item){
 }
 function renderInventoryTable(grid){
   const wrap=document.createElement('div');wrap.className='inventory-table-wrap';wrap.tabIndex=0;wrap.setAttribute('aria-label','Scrollable inventory table');
-  wrap.innerHTML=`<table class="inventory-data-table"><caption>${esc(state.category)} inventory</caption><thead><tr><th scope="col">Item</th><th scope="col">Amount</th><th scope="col">Bay</th><th scope="col">Location</th><th scope="col">Details</th><th scope="col">Actions</th></tr></thead><tbody></tbody></table>`;
+  wrap.innerHTML=`<table class="inventory-data-table"><caption>${esc(state.category)} inventory</caption><thead><tr><th scope="col">Item</th><th scope="col">Amount</th><th scope="col">Bay</th><th scope="col">Location</th>${state.category==='tile'?'<th scope="col">Right / Left</th>':''}<th scope="col">Details</th><th scope="col">Actions</th></tr></thead><tbody></tbody></table>`;
   const body=wrap.querySelector('tbody');
   state.inventory.slice(0,state.visibleCount).forEach(item=>{
     const row=document.createElement('tr'),{qty,sub}=inventoryQuantity(item);
-    const details=inventoryMeta(item).filter(m=>!['Location','Bay'].includes(m[0]));
-    row.innerHTML=`<th scope="row">${esc(item.name)}${item.estimated?'<span class="badge warn">Estimated</span>':''}</th><td><div class="table-qty">${qty}</div>${sub?`<div class="table-sub">${esc(sub)}</div>`:''}</td><td class="table-place">${inventoryMetaField(item,'Bay',item.sourceSheet||'Not set')}</td><td class="table-place">${inventoryMetaField(item,'Location',item.location||'Not set')}</td><td>${details.length?`<details><summary>Details</summary><div class="meta">${details.map(m=>inventoryMetaField(item,...m)).join('')}</div></details>`:'—'}</td><td class="table-actions">${inventoryActions(item)}</td>`;
+    const details=inventoryMeta(item).filter(m=>!['Location','Bay','Right / Left'].includes(m[0]));
+    row.innerHTML=`<th scope="row">${esc(item.name)}${item.estimated?'<span class="badge warn">Estimated</span>':''}</th><td><div class="table-qty">${qty}</div>${sub?`<div class="table-sub">${esc(sub)}</div>`:''}</td><td class="table-place">${inventoryMetaField(item,'Bay',item.sourceSheet||'Not set')}</td><td class="table-place">${inventoryMetaField(item,'Location',item.location||'Not set')}</td>${item.category==='tile'?`<td class="table-place">${inventoryMetaField(item,'Right / Left',item.side||'Not set')}</td>`:''}<td>${details.length?`<details><summary>Details</summary><div class="meta">${details.map(m=>inventoryMetaField(item,...m)).join('')}</div></details>`:'—'}</td><td class="table-actions">${inventoryActions(item)}</td>`;
     bindInventoryItem(row,item);body.appendChild(row);
   });
   const hint=document.createElement('p');hint.className='table-scroll-hint';hint.textContent='Swipe sideways to see all columns.';grid.append(hint,wrap);
@@ -303,15 +303,18 @@ function openMove(item,field){
   const sheets=[...new Set([...(state.inventorySheets[item.category]||[]),item.sourceSheet])];
   $('moveSheet').innerHTML=sheets.map(s=>`<option value="${escAttr(s)}">${esc(s)}</option>`).join('');
   $('moveSheet').value=item.sourceSheet;$('moveLocation').value=item.location||'';$('moveBay').value=item.bay||'';
+  $('moveSideLabel').classList.toggle('hidden',item.category!=='tile');
+  $('moveSide').value=item.category==='tile'?String(item.side||'').trim():'';
   $('moveBayLabel').classList.toggle('hidden',item.category!=='carpet' && !Object.hasOwn(item,'bay'));
   $('moveDialog').showModal();
-  $(field==='Location'?'moveLocation':field==='Bay notes'?'moveBay':'moveSheet').focus();
+  $(field==='Location'?'moveLocation':field==='Bay notes'?'moveBay':field==='Right / Left'?'moveSide':'moveSheet').focus();
 }
 
 async function saveMove(event){
   event.preventDefault();if(state.moveSaving)return;
   const item=state.moveItem,token=state.token,button=$('saveMoveBtn');
   const payload={category:item.category,inventoryId:item.id,sheetName:$('moveSheet').value,location:$('moveLocation').value,bay:$('moveBay').value,expected:{sourceSheet:item.sourceSheet,location:item.location,bay:item.bay||''}};
+  if(item.category==='tile'){payload.side=$('moveSide').value;payload.expected.side=item.side||'';}
   state.moveSaving=true;setBusy(button,true,'Saving…');
   try {
     const result=await call('moveInventory',token,payload);
@@ -321,7 +324,7 @@ async function saveMove(event){
     if(cached)cached.items=cached.items.map(row=>row.id===item.id?result.item:row);
     if(state.category===item.category){state.allInventory=state.allInventory.map(row=>row.id===item.id?result.item:row);populateBayFilter();applyInventoryFilters();}
     $('moveDialog').close();
-    toast(result.unchanged?'Location is already up to date.':`Saved: ${result.item.sourceSheet} · Location ${result.item.location||'not set'}.`);
+    toast(result.unchanged?'Location is already up to date.':`Saved: ${result.item.sourceSheet} · Location ${result.item.location||'not set'}${item.category==='tile'?' · '+(result.item.side||'Right / Left not set'):''}.`);
   }catch(error){toast(error.message,true);}finally{state.moveSaving=false;setBusy(button,false,'Save location');}
 }
 
