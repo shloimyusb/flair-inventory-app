@@ -108,6 +108,17 @@
     </form>
   </dialog>
 
+  <dialog id="moveDialog" class="modal">
+    <form id="moveForm" class="stack">
+      <div class="modal-head"><h3 id="moveTitle">Move item</h3><button type="button" data-close-move class="icon-btn" aria-label="Close move">×</button></div>
+      <label>Bay<select id="moveSheet" required></select></label>
+      <label>Location<input id="moveLocation" maxlength="100" placeholder="A, B, C, D…"></label>
+      <label id="moveBayLabel">Bay notes <span class="muted">(optional)</span><input id="moveBay" maxlength="500"></label>
+      <p class="muted">Changing the bay moves this item to that bay’s sheet tab. Quantities stay the same.</p>
+      <div class="modal-actions"><button type="button" data-close-move class="btn ghost">Cancel</button><button id="saveMoveBtn" type="submit" class="btn primary">Save location</button></div>
+    </form>
+  </dialog>
+
   <?!= include_('AppJs'); ?>
 
 </body>

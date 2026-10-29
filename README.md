@@ -57,3 +57,8 @@ Confirm carpet checks the existing confirmation box and updates the existing she
 ## Remember me
 The sign-in form offers an unchecked Remember me for 30 days option. Normal sign-in stores a six-hour session token in session storage. Remembered sign-in stores only an opaque session token in local storage, with a hashed-token record in Script Properties that survives cache eviction. No PIN is saved in browser storage. Sign out clears browser storage and revokes the server token. Expiry, current role, disabled/removed accounts and PIN changes are checked server-side. Browser storage restrictions and the separate Google account login can still require signing in. Automated coverage is in auth-check.cjs and login-storage-check.cjs.
 
+## Quick location and bay moves
+Tap an item's Location or Bay field, choose its destination bay tab, edit the location and optional carpet bay notes, then save. Changing a bay transfers the complete record between tabs in the same category workbook. Permanent IDs, quantities, formulas, confirmation and sheet date are preserved. Bay notes remain separate from the bay tab used by the inventory filter.
+
+Move.gs uses the advanced Sheets v4 service enabled in appsscript.json. The transfer, location changes and history entry are submitted in one batch so a rejected request cannot leave half a move. Fields map by recognized headers; unrecognized populated columns block incompatible transfers. Occupied destination rows are skipped, stale location edits are rejected, and view-only accounts cannot move items. The card and filters update directly after saving. Run node move-check.cjs (or node tests/move-check.cjs in the grouped local copy) for move safety checks.
+

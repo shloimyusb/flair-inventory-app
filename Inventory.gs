@@ -6,6 +6,7 @@ function getAppBootstrap(token) {
     inventory,
     categories: APP.CATEGORIES,
     carpetSheets: safeSheetNames_('carpet'),
+    inventorySheets: {carpet:safeSheetNames_('carpet'),tile:safeSheetNames_('tile'),vinyl:safeSheetNames_('vinyl')},
     vinylConfigured: !!PropertiesService.getScriptProperties().getProperty('VINYL_SPREADSHEET_ID'),
     scannerUrl: PropertiesService.getScriptProperties().getProperty('SCANNER_URL') || '',
     appUrl: ScriptApp.getService().getUrl(),

@@ -11,6 +11,9 @@ const state = {
   categoryRevisions: {},
   visibleCount: 60,
   carpetSheets: [],
+  inventorySheets: {},
+  moveItem: null,
+  moveSaving: false,
   adjustItem: null,
   adjustAction: 'add',
   scannerUrl: '',
@@ -61,6 +64,8 @@ function bindEvents(){
   $('saveRollBtn').addEventListener('click',saveRoll);
   document.querySelectorAll('.segment').forEach(b=>b.addEventListener('click',()=>setAdjustAction(b.dataset.action)));
   $('saveAdjustBtn').addEventListener('click',saveAdjustment);
+  $('moveForm').addEventListener('submit',saveMove);
+  document.querySelectorAll('[data-close-move]').forEach(b=>b.addEventListener('click',()=>$('moveDialog').close()));
   $('scanBtn').addEventListener('click',openScanner);
 }
 
@@ -82,6 +87,7 @@ async function bootstrap(){
   state.pendingCategories={};
   state.categoryRevisions={};
   state.user=data.user; state.carpetSheets=data.carpetSheets||[]; state.scannerUrl=data.scannerUrl||'';
+  state.inventorySheets=data.inventorySheets||{carpet:state.carpetSheets};
   state.vinylConfigured=!!data.vinylConfigured;
   $('testBanner').classList.toggle('hidden',data.environment==='production');
   if(state.scannerUrl){const url=new URL(state.scannerUrl);url.searchParams.set('returnUrl',data.appUrl);$('scanBtn').href=url.toString();}
@@ -208,10 +214,11 @@ function renderInventory(){
     else { qty=`${item.boxes??'—'} <small>boxes</small>`; if(item.totalSf!==null&&item.totalSf!==undefined) sub=`${fmt(item.totalSf)} SF total${item.sfPerBox?` · ${fmt(item.sfPerBox)} SF/box`:''}`; }
     const meta=[];
     if(item.sku)meta.push(['SKU',item.sku]); if(item.code)meta.push(['Code',item.code]); if(item.thickness)meta.push(['Thickness',item.thickness]);
-    if(item.location)meta.push(['Location',item.location]); if(item.bay)meta.push(['Bay',item.bay]); if(item.side)meta.push(['Side',item.side]);
-    if(item.sourceSheet)meta.push(['Sheet',item.sourceSheet]); if(item.grout)meta.push(['Grout',item.grout]);
+    meta.push(['Location',item.location||'Not set']); if(item.sourceSheet)meta.push(['Bay',item.sourceSheet]);
+    if(item.bay)meta.push(['Bay notes',item.bay]); if(item.side)meta.push(['Side',item.side]); if(item.grout)meta.push(['Grout',item.grout]);
     if(item.category==='carpet'){meta.push(['Confirmed',String(item.confirmed).toLowerCase()==='true'?'Yes':'Not yet']);if(item.timestamp)meta.push(['Sheet date',item.timestamp]);}
-    card.innerHTML=`<div class="card-title"><h3>${esc(item.name)}</h3>${est}</div><div class="qty">${qty}</div>${sub?`<div class="subqty">${esc(sub)}</div>`:''}<div class="meta">${meta.map(m=>`<div><b>${esc(m[0])}</b>${esc(m[1])}</div>`).join('')}</div><div class="card-actions"><button class="btn secondary" data-adjust="add">+ Add</button><button class="btn ghost" data-adjust="subtract">− Subtract</button></div>`;
+    card.innerHTML=`<div class="card-title"><h3>${esc(item.name)}</h3>${est}</div><div class="qty">${qty}</div>${sub?`<div class="subqty">${esc(sub)}</div>`:''}<div class="meta">${meta.map(m=>['Location','Bay','Bay notes'].includes(m[0]) && state.user.role!=='view'?`<button type="button" class="meta-edit" data-move="${escAttr(m[0])}" aria-label="Change ${escAttr(m[0].toLowerCase())} for ${escAttr(item.name)}"><b>${esc(m[0])} <span aria-hidden="true">✎</span></b>${esc(m[1])}</button>`:`<div><b>${esc(m[0])}</b>${esc(m[1])}</div>`).join('')}</div><div class="card-actions"><button class="btn secondary" data-adjust="add">+ Add</button><button class="btn ghost" data-adjust="subtract">− Subtract</button></div>`;
+    card.querySelectorAll('[data-move]').forEach(b=>b.addEventListener('click',()=>openMove(item,b.dataset.move)));
     card.querySelectorAll('[data-adjust]').forEach(b=>b.addEventListener('click',()=>openAdjust(item,b.dataset.adjust)));
     if(item.category==='carpet' && state.user.role!=='view'){
       const confirm=document.createElement('button');confirm.className='btn ghost';confirm.textContent=String(item.confirmed).toLowerCase()==='true'?'✓ Confirm again':'✓ Confirm carpet';
@@ -240,6 +247,36 @@ async function saveCarpetConfirmation(item,button){
     }
     toast('Carpet confirmed. Checkbox and sheet date updated.');
   } catch(error){toast(error.message,true);} finally {setBusy(button,false,label);}
+}
+
+function openMove(item,field){
+  if(state.user.role==='view'){toast('Your account is view-only.',true);return;}
+  if(state.moveSaving){toast('Your previous move is still saving.');return;}
+  state.moveItem=item;
+  $('moveTitle').textContent='Move '+item.name;
+  const sheets=[...new Set([...(state.inventorySheets[item.category]||[]),item.sourceSheet])];
+  $('moveSheet').innerHTML=sheets.map(s=>`<option value="${escAttr(s)}">${esc(s)}</option>`).join('');
+  $('moveSheet').value=item.sourceSheet;$('moveLocation').value=item.location||'';$('moveBay').value=item.bay||'';
+  $('moveBayLabel').classList.toggle('hidden',item.category!=='carpet' && !Object.hasOwn(item,'bay'));
+  $('moveDialog').showModal();
+  $(field==='Location'?'moveLocation':field==='Bay notes'?'moveBay':'moveSheet').focus();
+}
+
+async function saveMove(event){
+  event.preventDefault();if(state.moveSaving)return;
+  const item=state.moveItem,token=state.token,button=$('saveMoveBtn');
+  const payload={category:item.category,inventoryId:item.id,sheetName:$('moveSheet').value,location:$('moveLocation').value,bay:$('moveBay').value,expected:{sourceSheet:item.sourceSheet,location:item.location,bay:item.bay||''}};
+  state.moveSaving=true;setBusy(button,true,'Saving…');
+  try {
+    const result=await call('moveInventory',token,payload);
+    if(state.token!==token)return;
+    state.categoryRevisions[item.category]=(state.categoryRevisions[item.category]||0)+1;
+    const cached=state.loadedCategories[item.category];
+    if(cached)cached.items=cached.items.map(row=>row.id===item.id?result.item:row);
+    if(state.category===item.category){state.allInventory=state.allInventory.map(row=>row.id===item.id?result.item:row);populateBayFilter();applyInventoryFilters();}
+    $('moveDialog').close();
+    toast(result.unchanged?'Location is already up to date.':`Saved: ${result.item.sourceSheet} · Location ${result.item.location||'not set'}.`);
+  }catch(error){toast(error.message,true);}finally{state.moveSaving=false;setBusy(button,false,'Save location');}
 }
 
 function openAdjust(item,action){
