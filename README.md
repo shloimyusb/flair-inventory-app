@@ -18,17 +18,17 @@ This GitHub repository keeps Apps Script files at its root, alongside scanner.ht
 
 The local working copy groups Apps Script files in apps-script/, the scanner in docs/, and checks in tests/. Its local .clasp.json uses rootDir apps-script.
 
-Use Google's clasp tool to push source, create a version, and update the existing deployment. Keep the webapp section in appsscript.json; otherwise a command-line version can lose its web-app entry point. Use MYSELF during testing and ANYONE_ANONYMOUS for the employee email/PIN deployment, executing as USER_DEPLOYING.
+Use Google's clasp tool to push source, create a version, and update the existing deployment. Keep the webapp section in appsscript.json; otherwise a command-line version can lose its web-app entry point. The employee email/PIN deployment uses ANYONE_ANONYMOUS, executing as USER_DEPLOYING, so browsers can open the sign-in page without a Google account. Every inventory read/write requires an active approved employee session. This access setting does not make the source workbooks public or switch the configured test copies to live inventory. Use MYSELF if a future deployment should be restricted to its Google owner.
 
 Publish GitHub Pages from main / root. The scanner URL is https://shloimyusb.github.io/flair-inventory-app/scanner.html.
 
 ## Safe setup
 
-Run setupTestInventory from the Apps Script editor as the project owner. It creates separate TEST carpet/tile workbooks, initializes IDs there, and creates test employee/view accounts. The generated test PIN is stored only in Script Properties as TEST_LOGIN_PIN. The function refuses to repeat an existing setup.
+Run setupTestInventory_ from the Apps Script editor as the project owner. It creates separate TEST carpet/tile workbooks, initializes IDs there, and creates test employee/view accounts. The generated test PIN is stored only in Script Properties as TEST_LOGIN_PIN. The function refuses to repeat an existing setup.
 
-After validating the hosted app, run setupProductionInventory as the owner. It verifies both live workbook schemas, copies their tabs into backup workbooks, adds Inventory ID columns/IDs without changing quantities, configures the supplied live spreadsheet IDs, removes test accounts, and creates the owner's admin login. Backup IDs and initial admin credentials are stored in Script Properties. The function refuses to repeat a completed production setup.
+After validating the hosted app and obtaining explicit approval for live-workbook activation, run setupProductionInventory_ as the owner. It verifies both live workbook schemas, copies their tabs into backup workbooks, adds Inventory ID columns/IDs without changing quantities, configures the supplied live spreadsheet IDs, removes test accounts, and creates the owner's admin login. Backup IDs and initial admin credentials are stored in Script Properties. The function refuses to repeat a completed production setup.
 
-Editor setup commands check the active/effective Google account. Other internal helpers end in an underscore and cannot be called through google.script.run.
+All editor setup commands and internal helpers end in an underscore and cannot be called through google.script.run. Setup commands also check the active/effective Google account. Browser-callable inventory endpoints reject missing, expired or revoked employee sessions before accessing workbooks.
 
 ## Add employees
 

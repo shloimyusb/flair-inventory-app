@@ -1,5 +1,5 @@
 // Editor-only setup. Trailing underscores prevent browser RPC access.
-function setupTestInventory() {
+function setupTestInventory_() {
   requireProjectOwner_();
   const props = PropertiesService.getScriptProperties();
   if (props.getProperty('TEST_SETUP_COMPLETE')) throw new Error('Test inventory already exists. Use the configured workbooks.');
@@ -17,7 +17,7 @@ function requireProjectOwner_() {
   if (!email || email !== Session.getEffectiveUser().getEmail()) throw new Error('Run setup as the project owner in the Apps Script editor.');
 }
 
-function setupProductionInventory() {
+function setupProductionInventory_() {
   requireProjectOwner_();
   const lock = LockService.getScriptLock();
   lock.waitLock(30000);

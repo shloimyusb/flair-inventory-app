@@ -1,5 +1,5 @@
 // Owner-only command: connect the app exclusively to the user's TEST COPY workbooks.
-function useCopiedTestInventory() {
+function useCopiedTestInventory_() {
   requireProjectOwner_();
   const lock = LockService.getScriptLock();
   lock.waitLock(30000);
