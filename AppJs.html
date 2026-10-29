@@ -8,6 +8,7 @@ const state = {
   inventoryRequest: 0,
   loadedCategories: {},
   pendingCategories: {},
+  categoryRevisions: {},
   visibleCount: 60,
   carpetSheets: [],
   adjustItem: null,
@@ -63,6 +64,7 @@ async function bootstrap(){
   const data = await call('getAppBootstrap',state.token);
   state.loadedCategories={carpet:{items:data.inventory||[],loadedAt:Date.now()}};
   state.pendingCategories={};
+  state.categoryRevisions={};
   state.user=data.user; state.carpetSheets=data.carpetSheets||[]; state.scannerUrl=data.scannerUrl||'';
   state.vinylConfigured=!!data.vinylConfigured;
   $('testBanner').classList.toggle('hidden',data.environment==='production');
@@ -126,10 +128,11 @@ function fetchInventoryCategory(category,force){
     if(!force || pending.force)return pending.promise;
     return pending.promise.catch(()=>{}).then(()=>fetchInventoryCategory(category,true));
   }
-  const token=state.token,job={force:!!force};
+  const token=state.token,revision=state.categoryRevisions[category]||0,job={force:!!force};
   state.pendingCategories[category]=job;
   job.promise=call('getInventory',token,category,'',!!force).then(items=>{
     if(state.token!==token)throw new Error('Session changed. Please sign in again.');
+    if((state.categoryRevisions[category]||0)!==revision && state.loadedCategories[category])return state.loadedCategories[category].items;
     // Keep completed preloads even if the employee has moved to another tab.
     state.loadedCategories[category]={items,loadedAt:Date.now()};return items;
   }).finally(()=>{if(state.pendingCategories[category]===job)delete state.pendingCategories[category];});
@@ -191,8 +194,13 @@ function renderInventory(){
     if(item.sku)meta.push(['SKU',item.sku]); if(item.code)meta.push(['Code',item.code]); if(item.thickness)meta.push(['Thickness',item.thickness]);
     if(item.location)meta.push(['Location',item.location]); if(item.bay)meta.push(['Bay',item.bay]); if(item.side)meta.push(['Side',item.side]);
     if(item.sourceSheet)meta.push(['Sheet',item.sourceSheet]); if(item.grout)meta.push(['Grout',item.grout]);
+    if(item.category==='carpet'){meta.push(['Confirmed',String(item.confirmed).toLowerCase()==='true'?'Yes':'Not yet']);if(item.timestamp)meta.push(['Sheet date',item.timestamp]);}
     card.innerHTML=`<div class="card-title"><h3>${esc(item.name)}</h3>${est}</div><div class="qty">${qty}</div>${sub?`<div class="subqty">${esc(sub)}</div>`:''}<div class="meta">${meta.map(m=>`<div><b>${esc(m[0])}</b>${esc(m[1])}</div>`).join('')}</div><div class="card-actions"><button class="btn secondary" data-adjust="add">+ Add</button><button class="btn ghost" data-adjust="subtract">− Subtract</button></div>`;
     card.querySelectorAll('[data-adjust]').forEach(b=>b.addEventListener('click',()=>openAdjust(item,b.dataset.adjust)));
+    if(item.category==='carpet' && state.user.role!=='view'){
+      const confirm=document.createElement('button');confirm.className='btn ghost';confirm.textContent=String(item.confirmed).toLowerCase()==='true'?'✓ Confirm again':'✓ Confirm carpet';
+      confirm.addEventListener('click',()=>saveCarpetConfirmation(item,confirm));card.appendChild(confirm);
+    }
     grid.appendChild(card);
   });
   if(state.inventory.length>state.visibleCount){
@@ -201,6 +209,21 @@ function renderInventory(){
     const button=document.createElement('button');button.className='btn secondary';button.textContent='Show more items';button.addEventListener('click',()=>{state.visibleCount+=60;renderInventory();});
     more.append(info,button);grid.appendChild(more);
   }
+}
+
+async function saveCarpetConfirmation(item,button){
+  const label=button.textContent,token=state.token;setBusy(button,true,'Confirming…');
+  try {
+    const result=await call('confirmCarpet',token,item.id);
+    if(state.token!==token)return;
+    state.categoryRevisions.carpet=(state.categoryRevisions.carpet||0)+1;
+    const cached=state.loadedCategories.carpet;
+    if(cached){cached.items=cached.items.map(row=>row.id===item.id?result.item:row);}
+    if(state.category==='carpet'){
+      state.allInventory=state.allInventory.map(row=>row.id===item.id?result.item:row);applyInventoryFilters();
+    }
+    toast('Carpet confirmed. Checkbox and sheet date updated.');
+  } catch(error){toast(error.message,true);} finally {setBusy(button,false,label);}
 }
 
 function openAdjust(item,action){

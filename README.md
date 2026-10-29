@@ -48,3 +48,7 @@ Startup returns the initial carpet inventory with the app configuration. Carpet 
 Run node performance-check.cjs (or node tests/performance-check.cjs in the grouped local copy) to check cache sizing, invalidation, forced refresh, workbook isolation and row-index validation.
 
 
+
+## Carpet confirmation
+Confirm carpet checks the existing confirmation box and updates the existing sheet date for the selected permanent inventory ID, without changing footage. Confirmation history records the employee and old/new status and date. Confirm again refreshes the date for a later physical check. View-only users cannot confirm. If the required columns are absent, the action fails before writing. The app updates the card directly after success and prevents an older background read from overwriting the new confirmation.
+
