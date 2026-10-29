@@ -1,6 +1,6 @@
 <script>
 const state = {
-  token: localStorage.getItem('flairInventoryToken') || '',
+  token: readLoginToken(),
   user: null,
   category: 'carpet',
   inventory: [],
@@ -18,6 +18,17 @@ const state = {
 };
 
 const $ = id => document.getElementById(id);
+function readLoginToken(){
+  for(const name of ['sessionStorage','localStorage']){try{const token=window[name].getItem('flairInventoryToken');if(token)return token;}catch(e){}}
+  return '';
+}
+function clearLoginToken(){
+  for(const name of ['sessionStorage','localStorage']){try{window[name].removeItem('flairInventoryToken');}catch(e){}}
+}
+function storeLoginToken(token,remember){
+  clearLoginToken();
+  try {window[remember?'localStorage':'sessionStorage'].setItem('flairInventoryToken',token);return true;}catch(e){return false;}
+}
 const call = (fn, ...args) => new Promise((resolve, reject) => {
   google.script.run.withSuccessHandler(resolve).withFailureHandler(err => reject(new Error(err.message || err)))[fn](...args);
 });
@@ -26,7 +37,10 @@ window.addEventListener('load', async () => {
   bindEvents();
   window.addEventListener('message', handleScannerMessage);
   if (state.token) {
-    try { await bootstrap(); return; } catch (e) { localStorage.removeItem('flairInventoryToken'); state.token=''; }
+    try { await bootstrap(); return; } catch (e) {
+      if(/expired|revoked|sign in again/i.test(e.message)){clearLoginToken();state.token='';}
+      else toast('Could not connect. Refresh to retry your saved login.',true);
+    }
   }
   showLogin();
 });
@@ -53,9 +67,10 @@ async function login(e){
   e.preventDefault();
   setBusy(e.submitter,true,'Signing in…');
   try{
-    const result = await call('loginUser',$('loginEmail').value,$('loginPin').value);
+    const result = await call('loginUser',$('loginEmail').value,$('loginPin').value,$('rememberMe').checked);
     state.token=result.token; state.user=result.user;
-    localStorage.setItem('flairInventoryToken',state.token);
+    if(!storeLoginToken(state.token,result.remembered))toast('Signed in, but this browser could not save your login.',true);
+    $('loginPin').value='';
     await bootstrap();
   }catch(err){toast(err.message,true)}finally{setBusy(e.submitter,false,'Sign in')}
 }
@@ -81,7 +96,7 @@ async function bootstrap(){
 }
 
 function showLogin(){ $('loginView').classList.remove('hidden'); $('appView').classList.add('hidden'); }
-async function logout(){ try{await call('logoutUser',state.token)}catch(e){} localStorage.removeItem('flairInventoryToken'); state.token=''; state.user=null;state.loadedCategories={};state.pendingCategories={};state.allInventory=[];state.inventory=[];showLogin(); }
+async function logout(){ try{await call('logoutUser',state.token)}catch(e){toast('Could not complete server sign-out. Your saved login has been cleared on this browser.',true);}clearLoginToken();state.token='';state.user=null;state.loadedCategories={};state.pendingCategories={};state.allInventory=[];state.inventory=[];$('rememberMe').checked=false;showLogin(); }
 
 function switchView(view){
   document.querySelectorAll('.nav-btn').forEach(b=>b.classList.toggle('active',b.dataset.view===view));

@@ -42,13 +42,13 @@ function setInventoryUser_(email, name, role, pin) {
   return `Saved ${email} as ${role}.`;
 }
 
-function loginUser(email, pin) {
+function loginUser(email, pin, rememberMe) {
   const lock = LockService.getScriptLock();
   lock.waitLock(30000);
-  try { return loginUser_(email, pin); } finally { lock.releaseLock(); }
+  try { return loginUser_(email, pin, rememberMe===true); } finally { lock.releaseLock(); }
 }
 
-function loginUser_(email, pin) {
+function loginUser_(email, pin, rememberMe) {
   email = String(email || '').trim().toLowerCase();
   const cache = CacheService.getScriptCache();
   const key = 'login-failures:' + hashPin_(email);
@@ -62,23 +62,44 @@ function loginUser_(email, pin) {
   cache.remove(key);
 
   const token = Utilities.getUuid() + Utilities.getUuid();
-  const session = { email: user.email, name: user.name || user.email, role: user.role || 'employee' };
+  const expiresAt=Date.now()+(rememberMe?30*24*60*60:APP.SESSION_SECONDS)*1000;
+  const session = { email:user.email,expiresAt,pinVersion:hashPin_(user.pinHash) };
+  if(rememberMe){
+    pruneRememberedSessions_();
+    PropertiesService.getScriptProperties().setProperty(rememberedSessionKey_(token),JSON.stringify(session));
+  }
   CacheService.getScriptCache().put(`session:${token}`, JSON.stringify(session), APP.SESSION_SECONDS);
-  return { token, user: session };
+  return { token, user:{email:user.email,name:user.name||user.email,role:user.role||'employee'},remembered:!!rememberMe,expiresAt };
+}
+
+function rememberedSessionKey_(token){return 'remembered-session:'+hashPin_(token);}
+function pruneRememberedSessions_(){
+  const props=PropertiesService.getScriptProperties(),all=props.getProperties();
+  Object.keys(all).filter(key=>key.startsWith('remembered-session:')).forEach(key=>{
+    try {if(JSON.parse(all[key]).expiresAt<=Date.now())props.deleteProperty(key);}catch(e){props.deleteProperty(key);}
+  });
 }
 
 function logoutUser(token) {
-  if (token) CacheService.getScriptCache().remove(`session:${token}`);
+  if (token) {
+    CacheService.getScriptCache().remove(`session:${token}`);
+    PropertiesService.getScriptProperties().deleteProperty(rememberedSessionKey_(token));
+  }
   return true;
 }
 
 function requireSession_(token, writeRequired) {
   if (!token) throw new Error('Your session has expired. Please sign in again.');
-  const raw = CacheService.getScriptCache().get(`session:${token}`);
+  const cache=CacheService.getScriptCache();
+  const raw = cache.get(`session:${token}`) || PropertiesService.getScriptProperties().getProperty(rememberedSessionKey_(token));
   if (!raw) throw new Error('Your session has expired. Please sign in again.');
   const session = JSON.parse(raw);
+  if(session.expiresAt && session.expiresAt<=Date.now()){logoutUser(token);throw new Error('Your session has expired. Please sign in again.');}
   const approved = getUsers_().find(u => u.email === session.email && u.active !== false);
-  if (!approved || !['admin', 'employee', 'view'].includes(approved.role)) throw new Error('Your access has been revoked. Please sign in again.');
+  if (!approved || !['admin', 'employee', 'view'].includes(approved.role) || (session.pinVersion && session.pinVersion!==hashPin_(approved.pinHash))) {
+    logoutUser(token);throw new Error('Your access has been revoked. Please sign in again.');
+  }
+  if(session.expiresAt)cache.put(`session:${token}`,raw,Math.min(APP.SESSION_SECONDS,Math.max(1,Math.floor((session.expiresAt-Date.now())/1000))));
   const user = {email: approved.email, name: approved.name || approved.email, role: approved.role};
   if (writeRequired && user.role === 'view') throw new Error('You do not have permission to change inventory.');
   return user;

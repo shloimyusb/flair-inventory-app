@@ -1,0 +1,14 @@
+const fs=require('fs'),vm=require('vm'),assert=require('assert/strict');
+const root=fs.existsSync('apps-script')?'apps-script':'.',js=fs.readFileSync(root+'/AppJs.html','utf8');
+const local=new Map(),session=new Map();
+const storage=map=>({getItem:k=>map.get(k)||null,setItem:(k,v)=>map.set(k,v),removeItem:k=>map.delete(k)});
+const window={localStorage:storage(local),sessionStorage:storage(session)},ctx=vm.createContext({window});
+vm.runInContext(js.slice(js.indexOf('function readLoginToken('),js.indexOf('const call =')),ctx);
+assert.equal(ctx.storeLoginToken('remembered-test-token',true),true);assert.equal(local.get('flairInventoryToken'),'remembered-test-token');assert.equal(session.size,0);
+assert.equal(ctx.readLoginToken(),'remembered-test-token');
+assert.equal(ctx.storeLoginToken('temporary-test-token',false),true);assert.equal(local.size,0);assert.equal(session.get('flairInventoryToken'),'temporary-test-token');
+ctx.clearLoginToken();assert.equal(ctx.readLoginToken(),'');assert.equal(local.size,0);assert.equal(session.size,0);
+Object.defineProperty(window,'localStorage',{get(){throw Error('Storage blocked');},configurable:true});
+assert.equal(ctx.readLoginToken(),'');assert.equal(ctx.storeLoginToken('blocked-test-token',true),false);ctx.clearLoginToken();
+assert.equal(ctx.storeLoginToken('session-test-token',false),true);assert.equal(ctx.readLoginToken(),'session-test-token');
+console.log('Browser storage checks passed: opt-in persistent token, session-only default, sign-out cleanup and blocked-storage handling.');
