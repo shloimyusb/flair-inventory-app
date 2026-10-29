@@ -2,7 +2,7 @@ const APP = Object.freeze({
   HISTORY_SHEET: 'App History',
   SESSION_SECONDS: 21600,
   INVENTORY_ID_HEADER: 'Inventory ID',
-  CACHE_SECONDS: 30,
+  CACHE_SECONDS: 120,
   CATEGORIES: ['carpet', 'tile', 'vinyl'],
 });
 

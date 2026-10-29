@@ -1,7 +1,9 @@
 function getAppBootstrap(token) {
   const user = requireSession_(token, false);
+  const inventory = getInventory(token, 'carpet', '');
   return {
     user,
+    inventory,
     categories: APP.CATEGORIES,
     carpetSheets: safeSheetNames_('carpet'),
     vinylConfigured: !!PropertiesService.getScriptProperties().getProperty('VINYL_SPREADSHEET_ID'),
@@ -13,26 +15,23 @@ function getAppBootstrap(token) {
 
 function safeSheetNames_(category) {
   try {
+    const raw = CacheService.getScriptCache().get('sheetNames:' + category);
+    if (raw) {const info=JSON.parse(raw);if(info.spreadsheetId===getSpreadsheetId_(category))return info.names;}
     return getInventorySheets_(category).map(s => s.getName());
   } catch (e) {
     return [];
   }
 }
 
-function getInventory(token, category, query) {
+function getInventory(token, category, query, forceRefresh) {
   requireSession_(token, false);
   category = String(category || '').toLowerCase();
   if (!APP.CATEGORIES.includes(category)) throw new Error('Invalid inventory category.');
 
-  const cacheKey = `inventory:${category}`;
-  const cache = CacheService.getScriptCache();
-  let items;
-  const cached = cache.get(cacheKey);
-  if (cached) {
-    items = JSON.parse(cached);
-  } else {
+  let items = forceRefresh ? null : cachedInventory_(category);
+  if (!items) {
     items = readInventory_(category);
-    try { cache.put(cacheKey, JSON.stringify(items), APP.CACHE_SECONDS); } catch (e) {}
+    cacheInventory_(category, items);
   }
 
   const q = String(query || '').trim().toLowerCase();
@@ -41,27 +40,52 @@ function getInventory(token, category, query) {
   return items.filter(item => terms.every(term => JSON.stringify(item).toLowerCase().includes(term)));
 }
 
-function readInventory_(category) {
-  const sheets = getInventorySheets_(category);
-  const all = [];
-  sheets.forEach(sheet => {
-    const lastRow = sheet.getLastRow();
-    const lastCol = sheet.getLastColumn();
-    if (lastRow < 2 || lastCol < 1) return;
+function cachedInventory_(category) {
+  try {
+    const cache=CacheService.getScriptCache(),raw=cache.get('inventory:'+category);
+    if(!raw)return null;
+    const info=JSON.parse(raw);
+    if(info.spreadsheetId!==getSpreadsheetId_(category) || !Number.isInteger(info.parts) || info.parts<1 || info.parts>100)return null;
+    const keys=Array.from({length:info.parts},(_,i)=>info.prefix+':'+i),parts=cache.getAll(keys);
+    if(keys.some(key=>typeof parts[key]!=='string'))return null;
+    return JSON.parse(keys.map(key=>parts[key]).join(''));
+  } catch(e) {return null;}
+}
 
-    const values = sheet.getRange(1, 1, lastRow, lastCol).getValues();
-    const display = sheet.getRange(1, 1, lastRow, lastCol).getDisplayValues();
+function cacheInventory_(category,items) {
+  try {
+    const cache=CacheService.getScriptCache(),json=JSON.stringify(items),prefix='inventory-part:'+Utilities.getUuid(),chunks={};
+    // At most 64KB of UTF-8 per entry, below CacheService's 100KB limit.
+    for(let offset=0,index=0;offset<json.length;offset+=16000,index++)chunks[prefix+':'+index]=json.slice(offset,offset+16000);
+    cache.putAll(chunks,APP.CACHE_SECONDS);
+    cache.put('inventory:'+category,JSON.stringify({spreadsheetId:getSpreadsheetId_(category),parts:Object.keys(chunks).length,prefix}),APP.CACHE_SECONDS);
+  } catch(e) {console.warn('Inventory cache unavailable: '+e.message);}
+}
+
+function readInventory_(category) {
+  const sheets = getSpreadsheet_(category).getSheets().filter(sheet=>sheet.getName()!==APP.HISTORY_SHEET && !/master/i.test(sheet.getName()));
+  const all = [];
+  const names = [];
+  const index = {};
+  sheets.forEach(sheet => {
+    const sheetName=sheet.getName(),range=sheet.getDataRange();
+    const display = range.getDisplayValues();
     const headers = display[0];
     const map = makeHeaderMap_(headers);
     const nameCol = getColumn_(map, category, 'name');
     if (nameCol < 0) return;
+    names.push(sheetName);
+    const values = category==='carpet' ? display : range.getValues();
 
     for (let r = 1; r < values.length; r++) {
       const name = String(display[r][nameCol] || '').trim();
       if (!name) continue;
-      all.push(normalizeRow_(category, sheet.getName(), r + 1, values[r], display[r], map));
+      const item=normalizeRow_(category, sheetName, r + 1, values[r], display[r], map);
+      all.push(item);index[item.id]={sheetName,rowNumber:r+1};
     }
   });
+  try {CacheService.getScriptCache().put('sheetNames:'+category,JSON.stringify({spreadsheetId:getSpreadsheetId_(category),names}),APP.CACHE_SECONDS);} catch(e) {}
+  try {CacheService.getScriptCache().put('recordIndex:'+category,JSON.stringify({spreadsheetId:getSpreadsheetId_(category),index}),APP.CACHE_SECONDS);} catch(e) {}
   return all.sort((a, b) => String(a.name).localeCompare(String(b.name)));
 }
 
@@ -337,6 +361,20 @@ function getHistory(token, limit) {
 }
 
 function findRecordById_(category, inventoryId) {
+  // Cached row numbers are hints only: verify the permanent ID before using one.
+  try {
+    const raw=CacheService.getScriptCache().get('recordIndex:'+category);
+    const info=raw?JSON.parse(raw):null;
+    const hint=info && info.spreadsheetId===getSpreadsheetId_(category) && info.index[inventoryId];
+    if(hint){
+      const sheet=getSpreadsheet_(category).getSheetByName(hint.sheetName);
+      if(sheet && hint.rowNumber<=sheet.getLastRow()){
+        const lastCol=sheet.getLastColumn(),map=makeHeaderMap_(sheet.getRange(1,1,1,lastCol).getDisplayValues()[0]);
+        const range=sheet.getRange(hint.rowNumber,1,1,lastCol),displayRow=range.getDisplayValues()[0];
+        if(String(displayRow[getColumn_(map,category,'inventoryId')]).trim()===String(inventoryId).trim())return {sheet,rowNumber:hint.rowNumber,map,displayRow,row:range.getValues()[0]};
+      }
+    }
+  } catch(e) {}
   const sheets = getInventorySheets_(category);
   for (const sheet of sheets) {
     ensureInventoryIdColumn_(sheet, category);

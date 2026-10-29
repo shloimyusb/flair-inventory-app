@@ -1,0 +1,25 @@
+const fs=require('fs'),vm=require('vm'),assert=require('assert/strict'),crypto=require('crypto');
+const entries=new Map();let workbook='copy-a',reads=0;
+const cache={get:k=>entries.get(k)||null,getAll:keys=>Object.fromEntries(keys.filter(k=>entries.has(k)).map(k=>[k,entries.get(k)])),put(k,v){assert.ok(Buffer.byteLength(v,'utf8')<100000);entries.set(k,v);},putAll(values){for(const [k,v]of Object.entries(values))this.put(k,v);},remove:k=>entries.delete(k)};
+const ctx=vm.createContext({console,Utilities:{getUuid:()=>crypto.randomUUID()},CacheService:{getScriptCache:()=>cache}});
+const root=fs.existsSync('apps-script')?'apps-script':'.';
+for(const f of ['Config.gs','Inventory.gs'])vm.runInContext(fs.readFileSync(root+'/'+f,'utf8'),ctx);
+ctx.requireSession_=()=>({email:'test@example.invalid'});ctx.getSpreadsheetId_=()=>workbook;
+const actualRead=ctx.readInventory_;
+const large=Array.from({length:600},(_,i)=>({id:'CAR-'+i,name:'Label '+i,quantityDisplay:'E-95',notes:'A😀'.repeat(100)}));
+assert.ok(Buffer.byteLength(JSON.stringify(large),'utf8')>100000);
+ctx.readInventory_=()=>{reads++;return large;};
+assert.equal(ctx.getInventory('token','carpet','').length,600);assert.equal(reads,1);
+assert.equal(ctx.getInventory('token','carpet','').length,600);assert.equal(reads,1);
+ctx.getInventory('token','carpet','',true);assert.equal(reads,2);
+cache.remove('inventory:carpet');ctx.getInventory('token','carpet','');assert.equal(reads,3);
+workbook='copy-b';ctx.getInventory('token','carpet','');assert.equal(reads,4);
+const part=[...entries.keys()].find(k=>k.startsWith(JSON.parse(entries.get('inventory:carpet')).prefix));entries.delete(part);
+ctx.getInventory('token','carpet','');assert.equal(reads,5);
+let displayReads=0,rawReads=0;
+const sheet={getName:()=> 'Bay 1',getDataRange:()=>({getDisplayValues(){displayReads++;return [['Name of carpet','Total on hand','Inventory ID'],['TEST','E-95','CAR-1']];},getValues(){rawReads++;throw Error('Carpet should not need a second full read');}})};
+ctx.getSpreadsheet_=()=>({getSheets:()=>[sheet]});ctx.readInventory_=actualRead;
+const items=ctx.readInventory_('carpet');assert.equal(displayReads,1);assert.equal(rawReads,0);assert.equal(items[0].quantity,95);assert.equal(items[0].estimated,true);
+const lookup=JSON.parse(cache.get('recordIndex:carpet'));assert.equal(lookup.index['CAR-1'].rowNumber,2);
+console.log('Performance checks passed: oversized/Unicode cache chunks, cache hits, forced refresh, invalidation, workbook isolation, missing-chunk recovery, one carpet read and row index.');
+
