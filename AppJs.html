@@ -10,6 +10,7 @@ const state = {
   pendingCategories: {},
   categoryRevisions: {},
   visibleCount: 60,
+  viewMode: 'cards',
   carpetSheets: [],
   inventorySheets: {},
   moveItem: null,
@@ -58,6 +59,7 @@ function bindEvents(){
   $('bayFilter').addEventListener('change', applyInventoryFilters);
   $('locationFilter').addEventListener('change', applyInventoryFilters);
   $('sortOrder').addEventListener('change', applyInventoryFilters);
+  $('inventoryViewMode').addEventListener('change',()=>setInventoryView($('inventoryViewMode').value));
   $('refreshBtn').addEventListener('click',()=>loadInventory(true));
   $('historyRefreshBtn').addEventListener('click',loadHistory);
   $('addRollBtn').addEventListener('click',openRollDialog);
@@ -87,6 +89,7 @@ async function bootstrap(){
   state.pendingCategories={};
   state.categoryRevisions={};
   state.user=data.user; state.carpetSheets=data.carpetSheets||[]; state.scannerUrl=data.scannerUrl||'';
+  state.viewMode=readInventoryView(state.user.email);$('inventoryViewMode').value=state.viewMode;
   state.inventorySheets=data.inventorySheets||{carpet:state.carpetSheets};
   state.vinylConfigured=!!data.vinylConfigured;
   $('testBanner').classList.toggle('hidden',data.environment==='production');
@@ -203,31 +206,69 @@ function compareInventoryItems(a,b,mode){
   return (mode==='name-desc'?-1:1)*byName();
 }
 
-function renderInventory(){
-  const grid=$('inventoryGrid'); grid.innerHTML='';
-  if(!state.inventory.length){grid.innerHTML='<div class="card"><strong>No inventory found.</strong></div>';return}
+function inventoryViewKey(email){return 'flairInventoryView:'+String(email||'').trim().toLowerCase();}
+function readInventoryView(email){
+  try {const value=window.localStorage.getItem(inventoryViewKey(email));return ['cards','compact','table'].includes(value)?value:'cards';}catch(error){return 'cards';}
+}
+function setInventoryView(value){
+  state.viewMode=['cards','compact','table'].includes(value)?value:'cards';
+  $('inventoryViewMode').value=state.viewMode;
+  try {window.localStorage.setItem(inventoryViewKey(state.user.email),state.viewMode);}catch(error){}
+  if(state.loadedCategories[state.category])renderInventory();
+}
+
+function inventoryQuantity(item){
+  if(item.category==='carpet')return {qty:`${esc(item.quantityDisplay||'—')} <small>ft</small>`,sub:item.quantityMode==='dimension'?'Dimension-format remnant':''};
+  return {qty:`${esc(item.boxes??'—')} <small>boxes</small>`,sub:item.totalSf!=null?`${fmt(item.totalSf)} SF total${item.sfPerBox?` · ${fmt(item.sfPerBox)} SF/box`:''}`:''};
+}
+function inventoryMeta(item){
+  const meta=[];
+  if(item.sku)meta.push(['SKU',item.sku]);if(item.code)meta.push(['Code',item.code]);if(item.thickness)meta.push(['Thickness',item.thickness]);
+  meta.push(['Location',item.location||'Not set']);if(item.sourceSheet)meta.push(['Bay',item.sourceSheet]);
+  if(item.bay)meta.push(['Bay notes',item.bay]);if(item.side)meta.push(['Side',item.side]);if(item.grout)meta.push(['Grout',item.grout]);
+  if(item.category==='carpet'){meta.push(['Confirmed',String(item.confirmed).toLowerCase()==='true'?'Yes':'Not yet']);if(item.timestamp)meta.push(['Sheet date',item.timestamp]);}
+  return meta;
+}
+function inventoryMetaField(item,label,value){
+  return ['Location','Bay','Bay notes'].includes(label) && state.user.role!=='view'?`<button type="button" class="meta-edit" data-move="${escAttr(label)}" aria-label="Change ${escAttr(label.toLowerCase())} for ${escAttr(item.name)}"><b>${esc(label)} <span aria-hidden="true">✎</span></b>${esc(value)}</button>`:`<div><b>${esc(label)}</b>${esc(value)}</div>`;
+}
+function inventoryActions(item){
+  if(state.user.role==='view')return '<span class="muted">View only</span>';
+  return `<div class="card-actions"><button type="button" class="btn secondary" data-adjust="add">+ Add</button><button type="button" class="btn ghost" data-adjust="subtract">− Subtract</button></div>${item.category==='carpet'?`<button type="button" class="btn ghost confirm-action" data-confirm>${String(item.confirmed).toLowerCase()==='true'?'✓ Confirm again':'✓ Confirm carpet'}</button>`:''}`;
+}
+function bindInventoryItem(element,item){
+  element.querySelectorAll('[data-move]').forEach(b=>b.addEventListener('click',()=>openMove(item,b.dataset.move)));
+  element.querySelectorAll('[data-adjust]').forEach(b=>b.addEventListener('click',()=>openAdjust(item,b.dataset.adjust)));
+  const confirm=element.querySelector('[data-confirm]');if(confirm)confirm.addEventListener('click',()=>saveCarpetConfirmation(item,confirm));
+}
+function renderInventoryTable(grid){
+  const wrap=document.createElement('div');wrap.className='inventory-table-wrap';wrap.tabIndex=0;wrap.setAttribute('aria-label','Scrollable inventory table');
+  wrap.innerHTML=`<table class="inventory-data-table"><caption>${esc(state.category)} inventory</caption><thead><tr><th scope="col">Item</th><th scope="col">Amount</th><th scope="col">Bay</th><th scope="col">Location</th><th scope="col">Details</th><th scope="col">Actions</th></tr></thead><tbody></tbody></table>`;
+  const body=wrap.querySelector('tbody');
   state.inventory.slice(0,state.visibleCount).forEach(item=>{
+    const row=document.createElement('tr'),{qty,sub}=inventoryQuantity(item);
+    const details=inventoryMeta(item).filter(m=>!['Location','Bay'].includes(m[0]));
+    row.innerHTML=`<th scope="row">${esc(item.name)}${item.estimated?'<span class="badge warn">Estimated</span>':''}</th><td><div class="table-qty">${qty}</div>${sub?`<div class="table-sub">${esc(sub)}</div>`:''}</td><td class="table-place">${inventoryMetaField(item,'Bay',item.sourceSheet||'Not set')}</td><td class="table-place">${inventoryMetaField(item,'Location',item.location||'Not set')}</td><td>${details.length?`<details><summary>Details</summary><div class="meta">${details.map(m=>inventoryMetaField(item,...m)).join('')}</div></details>`:'—'}</td><td class="table-actions">${inventoryActions(item)}</td>`;
+    bindInventoryItem(row,item);body.appendChild(row);
+  });
+  const hint=document.createElement('p');hint.className='table-scroll-hint';hint.textContent='Swipe sideways to see all columns.';grid.append(hint,wrap);
+}
+
+function renderInventory(){
+  const grid=$('inventoryGrid'); grid.className='inventory-grid inventory-'+state.viewMode;grid.innerHTML='';
+  if(!state.inventory.length){grid.innerHTML='<div class="card"><strong>No inventory found.</strong></div>';return}
+  if(state.viewMode==='table')renderInventoryTable(grid);
+  else state.inventory.slice(0,state.visibleCount).forEach(item=>{
     const card=document.createElement('article'); card.className='card';
     const est=item.estimated?'<span class="badge warn">Estimated</span>':'';
-    let qty=''; let sub='';
-    if(item.category==='carpet'){ qty=`${esc(item.quantityDisplay||'—')} <small>ft</small>`; if(item.quantityMode==='dimension') sub='Dimension-format remnant'; }
-    else { qty=`${item.boxes??'—'} <small>boxes</small>`; if(item.totalSf!==null&&item.totalSf!==undefined) sub=`${fmt(item.totalSf)} SF total${item.sfPerBox?` · ${fmt(item.sfPerBox)} SF/box`:''}`; }
-    const meta=[];
-    if(item.sku)meta.push(['SKU',item.sku]); if(item.code)meta.push(['Code',item.code]); if(item.thickness)meta.push(['Thickness',item.thickness]);
-    meta.push(['Location',item.location||'Not set']); if(item.sourceSheet)meta.push(['Bay',item.sourceSheet]);
-    if(item.bay)meta.push(['Bay notes',item.bay]); if(item.side)meta.push(['Side',item.side]); if(item.grout)meta.push(['Grout',item.grout]);
-    if(item.category==='carpet'){meta.push(['Confirmed',String(item.confirmed).toLowerCase()==='true'?'Yes':'Not yet']);if(item.timestamp)meta.push(['Sheet date',item.timestamp]);}
-    card.innerHTML=`<div class="card-title"><h3>${esc(item.name)}</h3>${est}</div><div class="qty">${qty}</div>${sub?`<div class="subqty">${esc(sub)}</div>`:''}<div class="meta">${meta.map(m=>['Location','Bay','Bay notes'].includes(m[0]) && state.user.role!=='view'?`<button type="button" class="meta-edit" data-move="${escAttr(m[0])}" aria-label="Change ${escAttr(m[0].toLowerCase())} for ${escAttr(item.name)}"><b>${esc(m[0])} <span aria-hidden="true">✎</span></b>${esc(m[1])}</button>`:`<div><b>${esc(m[0])}</b>${esc(m[1])}</div>`).join('')}</div><div class="card-actions"><button class="btn secondary" data-adjust="add">+ Add</button><button class="btn ghost" data-adjust="subtract">− Subtract</button></div>`;
-    card.querySelectorAll('[data-move]').forEach(b=>b.addEventListener('click',()=>openMove(item,b.dataset.move)));
-    card.querySelectorAll('[data-adjust]').forEach(b=>b.addEventListener('click',()=>openAdjust(item,b.dataset.adjust)));
-    if(item.category==='carpet' && state.user.role!=='view'){
-      const confirm=document.createElement('button');confirm.className='btn ghost';confirm.textContent=String(item.confirmed).toLowerCase()==='true'?'✓ Confirm again':'✓ Confirm carpet';
-      confirm.addEventListener('click',()=>saveCarpetConfirmation(item,confirm));card.appendChild(confirm);
-    }
+    const {qty,sub}=inventoryQuantity(item),meta=inventoryMeta(item);
+    if(sub)card.classList.add('has-subqty');
+    card.innerHTML=`<div class="card-title"><h3>${esc(item.name)}</h3>${est}</div><div class="qty">${qty}</div>${sub?`<div class="subqty">${esc(sub)}</div>`:''}<div class="meta">${meta.map(m=>inventoryMetaField(item,...m)).join('')}</div><div class="inventory-actions">${inventoryActions(item)}</div>`;
+    bindInventoryItem(card,item);
     grid.appendChild(card);
   });
   if(state.inventory.length>state.visibleCount){
-    const more=document.createElement('div');more.style.gridColumn='1 / -1';more.className='card';
+    const more=document.createElement('div');more.style.gridColumn='1 / -1';more.className='card inventory-more';
     const info=document.createElement('span');info.textContent=`Showing ${state.visibleCount} of ${state.inventory.length} matching items. Search and filters include all items.`;
     const button=document.createElement('button');button.className='btn secondary';button.textContent='Show more items';button.addEventListener('click',()=>{state.visibleCount+=60;renderInventory();});
     more.append(info,button);grid.appendChild(more);

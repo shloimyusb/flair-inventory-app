@@ -62,3 +62,6 @@ Tap an item's Location or Bay field, choose its destination bay tab, edit the lo
 
 Move.gs uses the advanced Sheets v4 service enabled in appsscript.json. The transfer, location changes and history entry are submitted in one batch so a rejected request cannot leave half a move. Fields map by recognized headers; unrecognized populated columns block incompatible transfers. Occupied destination rows are skipped, stale location edits are rejected, and view-only accounts cannot move items. The card and filters update directly after saving. Run node move-check.cjs (or node tests/move-check.cjs in the grouped local copy) for move safety checks.
 
+## Personal inventory views
+The View selector offers Cards, Compact list, and Table. Switching layouts uses loaded inventory without a server request and preserves search, bay/location filters, sorting, and the visible item count. Table offers sideways scrolling on phones and expandable details; all layouts keep move, adjustment and carpet confirmation controls for employees. View-only accounts see no write controls. Each employee's selected layout is remembered in that browser's local storage, separately by email; blocked storage falls back to Cards on the next visit. Run node view-check.cjs (or node tests/view-check.cjs locally) to check persistence, safe rendering and role controls.
+
