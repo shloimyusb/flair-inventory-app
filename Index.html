@@ -73,7 +73,7 @@
 
   <dialog id="adjustDialog" class="modal">
     <form method="dialog" id="adjustForm" class="stack">
-      <div class="modal-head"><h3 id="adjustTitle">Adjust Inventory</h3><button value="cancel" class="icon-btn">×</button></div>
+      <div class="modal-head"><h3 id="adjustTitle">Adjust Inventory</h3><button type="submit" formnovalidate value="cancel" class="icon-btn" aria-label="Close adjustment">×</button></div>
       <div id="adjustCurrent" class="info-box"></div>
       <div class="segmented">
         <button type="button" class="segment active" data-action="add">Add</button>
@@ -82,13 +82,13 @@
       <label>Quantity<input id="adjustAmount" type="number" min="0.01" step="0.01" required></label>
       <label>Reason <span class="muted">(optional)</span><input id="adjustReason" type="text"></label>
       <label>Notes <span class="muted">(optional)</span><textarea id="adjustNotes" rows="3"></textarea></label>
-      <div class="modal-actions"><button value="cancel" class="btn ghost">Cancel</button><button id="saveAdjustBtn" type="button" class="btn primary">Save adjustment</button></div>
+      <div class="modal-actions"><button type="submit" formnovalidate value="cancel" class="btn ghost">Cancel</button><button id="saveAdjustBtn" type="button" class="btn primary">Save adjustment</button></div>
     </form>
   </dialog>
 
   <dialog id="rollDialog" class="modal wide">
     <form method="dialog" id="rollForm" class="stack">
-      <div class="modal-head"><h3>Add New Carpet Roll</h3><button value="cancel" class="icon-btn">×</button></div>
+      <div class="modal-head"><h3>Add New Carpet Roll</h3><button type="submit" formnovalidate value="cancel" class="icon-btn" aria-label="Close new carpet roll">×</button></div>
       <div class="form-grid">
         <label>Carpet name<input id="rollName" required></label>
         <label>Destination sheet<select id="rollSheet" required></select></label>
@@ -104,7 +104,7 @@
         <label class="check"><input id="rollConfirmed" type="checkbox"> Confirmed</label>
       </div>
       <label>Notes <span class="muted">(optional)</span><textarea id="rollNotes" rows="3"></textarea></label>
-      <div class="modal-actions"><button value="cancel" class="btn ghost">Cancel</button><button id="saveRollBtn" type="button" class="btn primary">Add roll</button></div>
+      <div class="modal-actions"><button type="submit" formnovalidate value="cancel" class="btn ghost">Cancel</button><button id="saveRollBtn" type="button" class="btn primary">Add roll</button></div>
     </form>
   </dialog>
 
