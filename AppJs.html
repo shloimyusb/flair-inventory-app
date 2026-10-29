@@ -37,6 +37,7 @@ window.addEventListener('load', async () => {
   bindEvents();
   window.addEventListener('message', handleScannerMessage);
   if (state.token) {
+    $('loginForm').classList.add('hidden');$('restoreStatus').classList.remove('hidden');
     try { await bootstrap(); return; } catch (e) {
       if(/expired|revoked|sign in again/i.test(e.message)){clearLoginToken();state.token='';}
       else toast('Could not connect. Refresh to retry your saved login.',true);
@@ -95,7 +96,7 @@ async function bootstrap(){
   if(state.vinylConfigured)fetchInventoryCategory('vinyl',false).catch(()=>{});
 }
 
-function showLogin(){ $('loginView').classList.remove('hidden'); $('appView').classList.add('hidden'); }
+function showLogin(){ $('loginForm').classList.remove('hidden');$('restoreStatus').classList.add('hidden');$('loginView').classList.remove('hidden'); $('appView').classList.add('hidden'); }
 async function logout(){ try{await call('logoutUser',state.token)}catch(e){toast('Could not complete server sign-out. Your saved login has been cleared on this browser.',true);}clearLoginToken();state.token='';state.user=null;state.loadedCategories={};state.pendingCategories={};state.allInventory=[];state.inventory=[];$('rememberMe').checked=false;showLogin(); }
 
 function switchView(view){
