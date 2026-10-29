@@ -21,5 +21,11 @@ const sheet={getName:()=> 'Bay 1',getDataRange:()=>({getDisplayValues(){displayR
 ctx.getSpreadsheet_=()=>({getSheets:()=>[sheet]});ctx.readInventory_=actualRead;
 const items=ctx.readInventory_('carpet');assert.equal(displayReads,1);assert.equal(rawReads,0);assert.equal(items[0].quantity,95);assert.equal(items[0].estimated,true);
 const lookup=JSON.parse(cache.get('recordIndex:carpet'));assert.equal(lookup.index['CAR-1'].rowNumber,2);
+let currentId='CAR-1';
+const indexedSheet={getLastRow:()=>2,getLastColumn:()=>3,getRange:r=>({getDisplayValues:()=>r===1?[['Name of carpet','Total on hand','Inventory ID']]:[['TEST','E-95',currentId]],getValues:()=>[['TEST','E-95',currentId]]})};
+ctx.getSpreadsheet_=()=>({getSheetByName:()=>indexedSheet});
+ctx.getInventorySheets_=()=>{throw Error('fallback scan invoked');};
+assert.equal(ctx.findRecordById_('carpet','CAR-1').rowNumber,2);
+currentId='MOVED-ROW';assert.throws(()=>ctx.findRecordById_('carpet','CAR-1'),/fallback scan invoked/);
 console.log('Performance checks passed: oversized/Unicode cache chunks, cache hits, forced refresh, invalidation, workbook isolation, missing-chunk recovery, one carpet read and row index.');
 

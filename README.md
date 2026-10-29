@@ -42,3 +42,8 @@ Hosted checks use only TEST workbooks: subtract/add carpet footage, add a new ro
 
 Google Sheets and Apps Script do not provide a cross-service transaction here. The script lock serializes app writes; users should refresh and check history before retrying an adjustment after a connection error. Direct concurrent edits in Google Sheets are outside the app lock.
 
+
+## Loading performance
+Startup returns the initial carpet inventory with the app configuration. Carpet tabs are read once each, and the inventory cache uses small chunks to stay below Google's per-entry limit. Recently loaded categories are reused for up to two minutes. Refresh bypasses the inventory cache, and app writes invalidate it. Direct sheet edits may take up to two minutes to appear without Refresh. A validated row index accelerates adjustments; moved rows fall back to an ID search. The interface initially renders 60 matching cards; search and filters still use the complete inventory.
+Run node performance-check.cjs (or node tests/performance-check.cjs in the grouped local copy) to check cache sizing, invalidation, forced refresh, workbook isolation and row-index validation.
+
