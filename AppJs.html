@@ -199,9 +199,14 @@ function compareInventoryItems(a,b,mode){
     return (mode==='quantity-desc'?bq-aq:aq-bq) || byName();
   }
   if(mode.startsWith('location-')){
+    const direction=mode==='location-desc'?-1:1;
+    const ab=String(a.sourceSheet||'').trim(),bb=String(b.sourceSheet||'').trim();
+    if(!ab || !bb){if(ab!==bb)return !ab?1:-1;}
+    const bayOrder=ab.localeCompare(bb,undefined,{numeric:true,sensitivity:'base'});
+    if(bayOrder)return direction*bayOrder;
     const al=String(a.location||'').trim(),bl=String(b.location||'').trim();
     if(!al || !bl)return al===bl?byName():!al?1:-1;
-    return (mode==='location-desc'?-1:1)*al.localeCompare(bl,undefined,{numeric:true,sensitivity:'base'}) || byName();
+    return direction*al.localeCompare(bl,undefined,{numeric:true,sensitivity:'base'}) || byName();
   }
   return (mode==='name-desc'?-1:1)*byName();
 }
