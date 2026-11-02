@@ -417,24 +417,6 @@ function ensureInventoryIdColumn_(sheet, category) {
   if (changed) sheet.getRange(2,idCol+1,ids.length,1).setValues(ids);
 }
 
-function firstBlankInventoryRow_(sheet, nameCol) {
-  const lastRow = Math.max(sheet.getLastRow(), 2);
-  const names = sheet.getRange(2, nameCol + 1, lastRow - 1, 1).getDisplayValues();
-  for (let i = 0; i < names.length; i++) {
-    if (!String(names[i][0]).trim()) return i + 2;
-  }
-  return lastRow + 1;
-}
-
-function setIfPresent_(sheet, rowNumber, map, category, field, value) {
-  const col = getColumn_(map, category, field);
-  if (col >= 0) sheet.getRange(rowNumber, col + 1).setValue(literalValue_(value));
-}
-
-function updateTimestamp_(sheet, rowNumber, map, category) {
-  const col = getColumn_(map, category, 'timestamp');
-  if (col >= 0) sheet.getRange(rowNumber, col + 1).setValue(new Date());
-}
 
 function appendHistory_(category, entry) {
   const ss = getSpreadsheet_(category);
@@ -457,4 +439,3 @@ function literalValue_(value) {
 function trimNumber_(n) {
   return Number.isInteger(Number(n)) ? String(Number(n)) : String(rounded_(Number(n), 2));
 }
-

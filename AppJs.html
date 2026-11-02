@@ -451,6 +451,7 @@ function openAdjust(item,action){
   $('adjustTitle').textContent=`Adjust ${item.name}`;
   $('adjustAmount').value=''; $('adjustReason').value=''; $('adjustNotes').value='';
   $('adjustAmount').step=item.category==='carpet'?'0.01':'1';
+  $('adjustAmount').min=item.category==='carpet'?'0.01':'1';
   $('adjustCurrent').innerHTML=`Current: <strong>${item.category==='carpet'?esc(item.quantityDisplay||'—')+' ft':`${item.boxes??'—'} boxes${item.totalSf!=null?` (${fmt(item.totalSf)} SF)`:''}`}</strong>`;
   $('adjustDialog').showModal();
 }
@@ -543,5 +544,4 @@ function fmt(v){return Number(v).toLocaleString(undefined,{maximumFractionDigits
 function esc(v){return String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
 function escAttr(v){return esc(v)}
 </script>
-
 

@@ -14,12 +14,15 @@ ctx.getSpreadsheet_=()=>{throw Error('Read failed');};assert.throws(()=>ctx.getH
 
 const source=fs.readFileSync(root+'/AppJs.html','utf8'),state={category:'carpet',token:'first',user:{email:'employee@example.invalid'},categoryRevisions:{},loadedCategories:{carpet:{items:[{id:'CAR-1',quantityDisplay:'E-95'}]}},allInventory:[{id:'CAR-1',quantityDisplay:'E-95'}],visibleCount:120,historyCache:{},historyRevision:0};
 let renders=0,remoteReads=0;const elements={historyList:{innerHTML:''},historyRefreshBtn:{}};
+for(const id of ['adjustTitle','adjustAmount','adjustReason','adjustNotes','adjustCurrent'])elements[id]={};elements.adjustDialog={showModal(){}};
 const ui=vm.createContext({state,Date,Promise,console,$:id=>elements[id],populateBayFilter(){},applyInventoryFilters(){state.visibleCount=60;},renderInventory(){renders++;},loadInventory(){remoteReads++;},esc:v=>String(v??''),setBusy(){},toast(){}});
 vm.runInContext(source.slice(source.indexOf('function invalidateHistory('),source.indexOf('function openScanner(')),ui);
+ui.setAdjustAction=()=>{};ui.fmt=String;vm.runInContext(source.slice(source.indexOf('function openAdjust('),source.indexOf('function setAdjustAction(')),ui);state.user.role='employee';
+ui.openAdjust({category:'tile',name:'Tile',boxes:10,totalSf:125},'add');assert.equal(elements.adjustAmount.min,'1');assert.equal(elements.adjustAmount.step,'1');
+ui.openAdjust({category:'carpet',name:'Carpet',quantityDisplay:'E-12'},'add');assert.equal(elements.adjustAmount.min,'0.01');assert.equal(elements.adjustAmount.step,'0.01');
 ui.applyInventoryUpdate('carpet',{id:'CAR-1',quantityDisplay:'E-75'});assert.equal(state.allInventory[0].quantityDisplay,'E-75');assert.equal(state.loadedCategories.carpet.items[0].quantityDisplay,'E-75');assert.equal(remoteReads,0);assert.equal(state.visibleCount,120);assert.equal(state.historyCache,null);assert.equal(state.categoryRevisions.carpet,1);
 ui.applyInventoryUpdate('carpet',{id:'CAR-2',quantityDisplay:'E-10'});assert.equal(state.allInventory.length,2,'New roll appears without a category reload');
 let resolveHistory,calls=0;ui.call=()=>{calls++;return new Promise(resolve=>resolveHistory=resolve);};
 (async()=>{const one=ui.loadHistory(),two=ui.loadHistory();assert.equal(calls,1,'Repeated History visits share an in-flight request');resolveHistory([{product:'Recent',timestamp:'Today'}]);await Promise.all([one,two]);await ui.loadHistory();assert.equal(calls,1,'Fresh history reuses the session cache');
 const late=ui.loadHistory(true);state.token='different-user';elements.historyList.innerHTML='cleared';resolveHistory([{product:'Previous user data'}]);await late;assert.equal(elements.historyList.innerHTML,'cleared','Late history cannot render after sign-out');
 console.log('Cleanup checks passed: one bootstrap auth check, reused workbook handles, warm tile payload, bounded chronological history, explicit read errors, mutation updates without full reads, pagination retention, history deduplication and session isolation.');})().catch(error=>{console.error(error);process.exitCode=1;});
-
