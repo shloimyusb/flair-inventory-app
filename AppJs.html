@@ -19,6 +19,7 @@ const state = {
   adjustItem: null,
   adjustAction: 'add',
   scannerUrl: '',
+  appUrl: '',
   vinylConfigured: false,
   historyCache: null,
   historyPending: null,
@@ -156,7 +157,7 @@ async function bootstrap(){
   for(const [category,items] of Object.entries(data.preloadedInventory||{}))if(['tile','vinyl'].includes(category) && Array.isArray(items))state.loadedCategories[category]={items,loadedAt:Date.now()};
   state.pendingCategories={};
   state.categoryRevisions={};
-  state.user=data.user; state.carpetSheets=data.carpetSheets||[]; state.scannerUrl=data.scannerUrl||'';
+  state.user=data.user; state.carpetSheets=data.carpetSheets||[]; state.scannerUrl=data.scannerUrl||'';state.appUrl=data.appUrl||'';
   state.viewMode=readInventoryView(state.user.email);$('inventoryViewMode').value=state.viewMode;
   state.cardSize=readCardSize(state.user.email);
   if(loginHostNonce()){
@@ -169,14 +170,14 @@ async function bootstrap(){
   state.inventorySheets=data.inventorySheets||{carpet:state.carpetSheets};
   state.vinylConfigured=!!data.vinylConfigured;
   $('testBanner').classList.toggle('hidden',data.environment==='production');
-  if(state.scannerUrl){const url=new URL(state.scannerUrl);url.searchParams.set('returnUrl',loginHostNonce()?'https://shloimyusb.github.io/flair-inventory-app/app.html':data.appUrl);$('scanBtn').href=url.toString();}
   $('userName').textContent=state.user.name;
   $('loginView').classList.add('hidden'); $('appView').classList.remove('hidden');
   switchView('inventory');
   populateRollSheets();
-  const scan=[$('initialScanCode').value,$('initialScanThickness').value].filter(Boolean).join(' ');
-  if(scan){switchCategory('vinyl');$('searchInput').value=scan;$('initialScanCode').value='';$('initialScanThickness').value='';}
-  else {await switchCategory('carpet');}
+  const code=$('initialScanCode').value,thickness=$('initialScanThickness').value,requested=$('initialScanCategory').value;
+  const category=['carpet','tile','vinyl'].includes(requested)?requested:(code||thickness?'vinyl':'carpet');
+  await useScannedSearch(category,code,thickness);
+  $('initialScanCode').value='';$('initialScanThickness').value='';$('initialScanCategory').value='';
   // Warm the other tabs while the employee is viewing the first category.
   if(!state.loadedCategories.tile)fetchInventoryCategory('tile',false).catch(()=>{});
   if(state.vinylConfigured && !state.loadedCategories.vinyl)fetchInventoryCategory('vinyl',false).catch(()=>{});
@@ -204,7 +205,7 @@ function switchCategory(category){
   $('bayFilter').value='';$('locationFilter').value='';state.allInventory=[];
   document.querySelectorAll('.category-btn').forEach(b=>{b.classList.toggle('active',b.dataset.category===category);b.setAttribute('aria-pressed',String(b.dataset.category===category));});
   $('addRollBtn').classList.toggle('hidden',category!=='carpet' || state.user.role==='view');
-  $('scanBtn').classList.toggle('hidden',category!=='vinyl');
+  configureScannerLink();
   return loadInventory(false);
 }
 
@@ -520,21 +521,33 @@ async function loadHistory(force){
   finally{if(state.token===token && state.historyRevision===revision)setBusy($('historyRefreshBtn'),false,'Refresh');}
 }
 
-function openScanner(event){
-  if(!state.scannerUrl){event.preventDefault();toast('The camera scanner is not configured yet. You can still search vinyl manually.',true);}
+async function useScannedSearch(category,code,thickness){
+  if(!['carpet','tile','vinyl'].includes(category))return;
+  const token=state.token,scan=[String(code||'').slice(0,80),category==='vinyl'?String(thickness||'').slice(0,20):''].filter(Boolean).join(' ');
+  await switchCategory(category);
+  if(state.token!==token || state.category!==category)return;
+  if(scan){$('searchInput').value=scan;if(state.loadedCategories[category])applyInventoryFilters();toast('Label text is ready. Check the matching item before making changes.');}
 }
-function handleScannerMessage(event){
+function configureScannerLink(){
+  const button=$('scanBtn'),category=state.category;
+  button.textContent='Scan '+category[0].toUpperCase()+category.slice(1)+' Label';button.classList.remove('hidden');
+  try{const url=new URL(state.scannerUrl);url.searchParams.set('category',category);url.searchParams.set('returnUrl',loginHostNonce()?'https://shloimyusb.github.io/flair-inventory-app/app.html':state.appUrl);button.href=url.toString();}
+  catch(error){button.href='#';}
+}
+function openScanner(event){
+  if(!state.scannerUrl || $('scanBtn').getAttribute('href')==='#'){event.preventDefault();toast('The camera scanner is not configured yet. You can still search by name or code.',true);}
+}
+async function handleScannerMessage(event){
   if(!state.scannerUrl)return;
   let expectedOrigin='';
   try{expectedOrigin=new URL(state.scannerUrl).origin}catch(e){}
   if(expectedOrigin && event.origin!==expectedOrigin)return;
   const data=event.data||{};
-  if(data.type!=='flair-vinyl-scan' || event.source!==state.scannerWindow || data.nonce!==state.scanNonce)return;
-  const code=String(data.code||'').trim(); const thickness=String(data.thickness||'').trim();
+  if(!['flair-vinyl-scan','flair-inventory-scan'].includes(data.type) || event.source!==state.scannerWindow || data.nonce!==state.scanNonce)return;
+  const category=data.type==='flair-vinyl-scan'?'vinyl':data.category;if(!['carpet','tile','vinyl'].includes(category))return;
+  const code=String(data.code||'').trim().slice(0,80),thickness=category==='vinyl'?String(data.thickness||'').trim().slice(0,20):'';
   if(!code && !thickness){toast('No code or thickness was detected.',true);return}
-  $('searchInput').value=[code,thickness].filter(Boolean).join(' ');
-  toast(`Scanner read ${code||'unknown code'}${thickness?` · ${thickness} mm`:''}.`);
-  loadInventory(true);
+  await useScannedSearch(category,code,thickness);
 }
 
 function setBusy(btn,busy,label){if(!btn)return;btn.disabled=busy;btn.textContent=label}

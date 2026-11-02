@@ -63,7 +63,7 @@ function startInventoryHost(){
   const url=new URL(INVENTORY_APP_URL),query=new URLSearchParams(location.search);
   url.searchParams.set('loginHostNonce',nonce);
   for(const [key,max] of [['scanCode',80],['scanThickness',20]])if(query.has(key))url.searchParams.set(key,query.get(key).slice(0,max));
+  const category=query.get('scanCategory');if(['carpet','tile','vinyl'].includes(category))url.searchParams.set('scanCategory',category);
   frame.hidden=false;frame.src=url.toString();
 }
 startInventoryHost();
-

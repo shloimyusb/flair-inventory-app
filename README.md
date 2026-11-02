@@ -10,7 +10,7 @@ Mobile inventory app hosted by Google Apps Script, with Google Sheets as the sou
 - History records employee, timestamp, source tab, action, and before/after quantities.
 - Approved email/PIN login with admin, employee, and view roles. Login attempts are limited; sessions expire and revoked users lose access.
 - Vinyl remains scaffolded until its sheet is configured.
-- Scanner supports camera capture, photo upload, OCR, and manual correction. The scanner opens as a full page and returns the detected code/thickness to the validated Apps Script app URL. Inventory credentials are never sent to the scanner.
+- Each inventory category offers Scan Label. Carpet scanning suggests product/style names and roll codes; tile scanning suggests manufacturer SKUs, item codes and product names; vinyl retains code and overall-thickness recognition. Camera capture, photo upload and manual correction are supported. Employees check or select detected text, then search the matching category. The raw label stays on the scanner page; only the selected, bounded search text and category return to the approved app URL. Scanning does not write stock or use stored inventory credentials.
 
 ## Files and deployment
 
@@ -21,6 +21,7 @@ The local working copy groups Apps Script files in apps-script/, the scanner in 
 Use Google's clasp tool to push source, create a version, and update the existing deployment. Keep the webapp section in appsscript.json; otherwise a command-line version can lose its web-app entry point. The employee email/PIN deployment uses ANYONE_ANONYMOUS, executing as USER_DEPLOYING, so browsers can open the sign-in page without a Google account. Every inventory read/write requires an active approved employee session. This access setting does not make the source workbooks public or switch the configured test copies to live inventory. Use MYSELF if a future deployment should be restricted to its Google owner.
 
 Publish GitHub Pages from main / root. The scanner URL is https://shloimyusb.github.io/flair-inventory-app/scanner.html.
+Publish label-reader.js beside scanner.html. The scanner's category query parameter selects carpet, tile or vinyl; scanCategory travels back through app.html/login-host.js and Apps Script. Returned searches apply after the selected category finishes loading, including cached categories. Legacy vinyl URLs without scanCategory continue to work. Recognition uses printed text, with editable suggestions; manufacturer-specific label layouts may require tuning against real samples. Run label-reader-check.cjs (or node tests/label-reader-check.cjs locally) to check parsing, safe URLs and category/race handling.
 
 ## Safe setup
 
@@ -76,5 +77,4 @@ Cards view includes a Card size slider (smaller to larger). It adjusts card widt
 The View selector offers Cards, Compact list, and Table. Switching layouts uses loaded inventory without a server request and preserves search, bay/location filters, sorting, and the visible item count. Table offers sideways scrolling on phones and expandable details; all layouts keep move, adjustment and carpet confirmation controls for employees. View-only accounts see no write controls. Each employee's selected layout is remembered in that browser's local storage, separately by email; blocked storage falls back to Cards on the next visit. Run node view-check.cjs (or node tests/view-check.cjs locally) to check persistence, safe rendering and role controls.
 
 Tile cards and compact rows always show Right / Left, including Not set for blank values. Table includes a dedicated Right / Left column. Employees can tap the field to choose Left, Right or Not set, optionally changing bay/location at the same time. The server updates the existing R-L / Side column in the same atomic move/history batch, checks for stale side edits, and preserves quantities and dates. View-only users cannot edit it.
-
 

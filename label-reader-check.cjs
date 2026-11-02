@@ -1,0 +1,31 @@
+const fs=require('fs'),vm=require('vm'),assert=require('assert/strict');
+const reader=require(fs.existsSync('docs/label-reader.js')?'../docs/label-reader.js':'./label-reader.js');
+const candidates=reader.labelScanCandidates;
+assert.equal(candidates('FLAIR FLOORING\nStyle: Dublin Dundrum\nRoll No: 3191943\nLength: 95 FT','carpet')[0].value,'Dublin Dundrum');
+assert.equal(candidates('CARPET LABEL\nStyle No: 3b43849\nColor: Natural\nE-95','carpet')[0].value,'3b43849');
+assert.equal(candidates('Style\n111\n12 FT','carpet')[0].value,'111');
+assert.ok(!candidates('12 x 24\n18.9 SF\n11/2/2026\nE-95','carpet').length);
+assert.equal(candidates('Dublin Dundrum\n95 ft\nE-95','carpet')[0].value,'Dublin Dundrum');
+assert.equal(candidates('DALTILE\nSKU: BB1412241P\nProduct: Beaubridge Arctic White\nSize: 12x24','tile')[0].value,'BB1412241P');
+assert.equal(candidates('Item No. BB1412241P\n18.9 SF/Box','tile')[0].value,'BB1412241P');
+assert.equal(candidates('Tile Name: Beaubridge Arctic White 12x24','tile')[0].value,'Beaubridge Arctic White 12 x 24');
+assert.equal(candidates('Tilematic Ceramic','tile')[0].value,'Tilematic Ceramic','Do not remove an apparent field prefix from an ordinary name');
+assert.equal(candidates('Style:\nSKU: BB1412241P','tile')[0].value,'BB1412241P');
+assert.equal(candidates('Code: 1194–1\nWear Layer: 0.5 mm\nOverall Thickness: 4.5 mm','vinyl')[0].value,'1194-1');
+assert.equal(reader.labelScanThickness('Wear Layer: 0.5 mm\nOverall Thickness: 4.5 mm'),'4.5');
+assert.equal(candidates('SKU: BB1412241P\nBB1412241P','tile').filter(x=>x.value==='BB1412241P').length,1);
+assert.ok(candidates(Array.from({length:30},(_,i)=>'Product '+i).join('\n'),'tile').length<=8);
+const base='https://shloimyusb.github.io/flair-inventory-app/app.html';
+const carpet=new URL(reader.labelScanReturnUrl(base,'carpet','Dublin Dundrum','4.5'));assert.equal(carpet.searchParams.get('scanCategory'),'carpet');assert.equal(carpet.searchParams.get('scanCode'),'Dublin Dundrum');assert.equal(carpet.searchParams.has('scanThickness'),false);
+assert.equal(new URL(reader.labelScanReturnUrl(base,'tile','x'.repeat(1000),'')).searchParams.get('scanCode').length,80);
+assert.equal(reader.labelScanReturnUrl('https://evil.example/app','tile','SKU',''),null);assert.equal(reader.labelScanReturnUrl('https://script.google.com/macros/s/unknown/exec','tile','SKU',''),null);
+
+const source=fs.readFileSync((fs.existsSync('apps-script')?'apps-script/':'')+'AppJs.html','utf8'),state={token:'employee-session',category:'carpet',loadedCategories:{carpet:{},tile:{},vinyl:{}}},elements={searchInput:{value:''},scanBtn:{classList:{remove(){}},href:'',textContent:''}};let finish,filters=0,categoryCalls=0;
+const ctx=vm.createContext({URL,state,$:id=>elements[id],loginHostNonce:()=>true,toast(){},applyInventoryFilters(){filters++;},switchCategory(category){categoryCalls++;state.category=category;elements.searchInput.value='';return new Promise(resolve=>finish=resolve);}});
+vm.runInContext(source.slice(source.indexOf('async function useScannedSearch('),source.indexOf('function openScanner(')),ctx);
+(async()=>{const pending=ctx.useScannedSearch('tile','BB1412241P','4.5');assert.equal(elements.searchInput.value,'');finish();await pending;assert.equal(elements.searchInput.value,'BB1412241P');assert.equal(filters,1,'Apply the search after the category has loaded');
+const stale=ctx.useScannedSearch('tile','OLD','');state.category='carpet';finish();await stale;assert.equal(elements.searchInput.value,'');assert.equal(filters,1);
+const revoked=ctx.useScannedSearch('carpet','OLD','');state.token='different-user';finish();await revoked;assert.equal(elements.searchInput.value,'');
+const count=categoryCalls;await ctx.useScannedSearch('invalid','OLD','');assert.equal(categoryCalls,count);
+state.scannerUrl='https://shloimyusb.github.io/flair-inventory-app/scanner.html';for(const category of ['carpet','tile','vinyl']){state.category=category;ctx.configureScannerLink();const url=new URL(elements.scanBtn.href);assert.equal(url.searchParams.get('category'),category);assert.equal(url.searchParams.get('returnUrl'),base);assert.ok(elements.scanBtn.textContent.toLowerCase().includes(category));}
+console.log('Label scanner checks passed: carpet names/codes, tile SKU/name, dimensions/quantity exclusions, vinyl compatibility, bounded approved handoff URLs, category links, delayed filtering and stale/session response safety.');})().catch(error=>{console.error(error);process.exitCode=1;});

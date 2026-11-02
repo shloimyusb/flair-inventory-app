@@ -10,6 +10,7 @@
   <div id="toast" class="toast hidden" role="status" aria-live="polite" aria-atomic="true"></div>
   <input type="hidden" id="initialScanCode" value="<?= initialScanCode ?>">
   <input type="hidden" id="initialScanThickness" value="<?= initialScanThickness ?>">
+  <input type="hidden" id="initialScanCategory" value="<?= initialScanCategory ?>">
   <input type="hidden" id="initialLoginHostNonce" value="<?= initialLoginHostNonce ?>">
 
   <main id="loginView" class="login-shell">
@@ -53,7 +54,7 @@
           <button class="category-btn" data-category="vinyl">Vinyl</button>
         </div>
         <div class="toolbar-actions">
-          <a id="scanBtn" class="btn secondary hidden" role="button" target="_top" style="text-decoration:none">Scan Vinyl Label</a>
+          <a id="scanBtn" class="btn secondary" role="button" target="_top" style="text-decoration:none">Scan Carpet Label</a>
           <button id="addRollBtn" class="btn primary">+ Add New Roll</button>
         </div>
       </div>
@@ -141,5 +142,4 @@
 
 </body>
 </html>
-
 
