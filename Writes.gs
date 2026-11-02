@@ -32,14 +32,14 @@ function cacheInventoryChange_(category,sheet,rowNumber,id){
     }
   }catch(error){console.warn('Inventory saved; cache refresh unavailable: '+error.message);}
 }
-function validateRollLocation_(sheet,rowNumber,column,location){
+function validateRollLocation_(sheet,rowNumber,column,location,itemKind){
+  itemKind=itemKind||'roll';
   if(column<0 || !location)return;
   const rule=sheet.getRange(rowNumber>sheet.getMaxRows()?2:rowNumber,column+1).getDataValidation();
   if(!rule || rule.getAllowInvalid())return;
   const kind=String(rule.getCriteriaType()),args=rule.getCriteriaValues();let allowed;
   if(kind==='VALUE_IN_LIST')allowed=args[0];
   else if(kind==='VALUE_IN_RANGE')allowed=args[0].getDisplayValues().flat();
-  else throw new Error('This location uses a custom sheet rule. Add the roll in Google Sheets. No roll was added.');
-  if(!allowed.map(String).includes(location))throw new Error('Choose an allowed location: '+allowed.filter(Boolean).join(', ')+'. No roll was added.');
+  else throw new Error('This location uses a custom sheet rule. Add the '+itemKind+' in Google Sheets. No '+itemKind+' was added.');
+  if(!allowed.map(String).includes(location))throw new Error('Choose an allowed location: '+allowed.filter(Boolean).join(', ')+'. No '+itemKind+' was added.');
 }
-

@@ -26,6 +26,7 @@ const state = {
   historyRevision: 0,
   adjustSaving: false,
   rollSaving: false,
+  tileSaving: false,
 };
 
 const $ = id => document.getElementById(id);
@@ -131,6 +132,9 @@ function bindEvents(){
   $('inventoryGrid').addEventListener('click',handleInventoryAction);
   $('addRollBtn').addEventListener('click',openRollDialog);
   $('saveRollBtn').addEventListener('click',saveRoll);
+  $('addTileBtn').addEventListener('click',openTileDialog);
+  $('saveTileBtn').addEventListener('click',saveTile);
+  for(const id of ['tileBoxes','tileSfPerBox'])$(id).addEventListener('input',updateTileTotal);
   document.querySelectorAll('.segment').forEach(b=>b.addEventListener('click',()=>setAdjustAction(b.dataset.action)));
   $('saveAdjustBtn').addEventListener('click',saveAdjustment);
   $('moveForm').addEventListener('submit',saveMove);
@@ -176,8 +180,12 @@ async function bootstrap(){
   populateRollSheets();
   const code=$('initialScanCode').value,thickness=$('initialScanThickness').value,requested=$('initialScanCategory').value;
   const category=['carpet','tile','vinyl'].includes(requested)?requested:(code||thickness?'vinyl':'carpet');
-  await useScannedSearch(category,code,thickness);
+  const scanToken=state.token;await useScannedSearch(category,code,thickness);
+  if(state.token===scanToken && state.category===category && $('initialScanAction').value==='add'){
+    openManualItem(category);
+  }
   $('initialScanCode').value='';$('initialScanThickness').value='';$('initialScanCategory').value='';
+  $('initialScanAction').value='';
   // Warm the other tabs while the employee is viewing the first category.
   if(!state.loadedCategories.tile)fetchInventoryCategory('tile',false).catch(()=>{});
   if(state.vinylConfigured && !state.loadedCategories.vinyl)fetchInventoryCategory('vinyl',false).catch(()=>{});
@@ -188,7 +196,7 @@ function showLogin(){ $('loginForm').classList.remove('hidden');$('restoreStatus
 async function logout(){
   const token=state.token;state.token='';state.user=null;state.inventoryRequest++;state.historyRevision++;
   state.loadedCategories={};state.pendingCategories={};state.allInventory=[];state.inventory=[];state.historyCache=null;state.historyPending=null;
-  for(const id of ['adjustDialog','rollDialog','moveDialog'])$(id).close();
+  for(const id of ['adjustDialog','rollDialog','tileDialog','moveDialog'])$(id).close();
   $('inventoryGrid').innerHTML='';$('historyList').innerHTML='';$('rememberMe').checked=false;
   await clearLoginToken();showLogin();
   try{await call('logoutUser',token)}catch(e){toast('Saved sign-in cleared here. Server sign-out could not connect; try signing out again when connected.',true);}
@@ -205,6 +213,7 @@ function switchCategory(category){
   $('bayFilter').value='';$('locationFilter').value='';state.allInventory=[];
   document.querySelectorAll('.category-btn').forEach(b=>{b.classList.toggle('active',b.dataset.category===category);b.setAttribute('aria-pressed',String(b.dataset.category===category));});
   $('addRollBtn').classList.toggle('hidden',category!=='carpet' || state.user.role==='view');
+  $('addTileBtn').classList.toggle('hidden',category!=='tile' || state.user.role==='view');
   configureScannerLink();
   return loadInventory(false);
 }
@@ -487,6 +496,25 @@ async function saveRoll(){
 }
 
 function invalidateHistory(){state.historyCache=null;state.historyRevision++;}
+function openTileDialog(){
+  if(state.user.role==='view'){toast('Your account is view-only.',true);return;}
+  if(state.tileSaving){toast('Your tile is still saving.');return;}
+  $('tileForm').reset();$('tileSheet').innerHTML=(state.inventorySheets.tile||[]).map(name=>`<option value="${escAttr(name)}">${esc(name)}</option>`).join('');
+  const bay=$('bayFilter').value;if(bay && [...$('tileSheet').options].some(option=>option.value===bay))$('tileSheet').value=bay;
+  updateTileTotal();$('tileDialog').showModal();
+}
+function updateTileTotal(){
+  const boxes=Number($('tileBoxes').value),sf=Number($('tileSfPerBox').value);
+  $('tileTotalSf').textContent=$('tileBoxes').value!==''&&Number.isInteger(boxes)&&boxes>=0&&Number.isFinite(sf)&&sf>0?fmt(Math.round(boxes*sf*100)/100)+' SF':'— SF';
+}
+async function saveTile(){
+  if(state.tileSaving || !$('tileForm').reportValidity())return;
+  const token=state.token,button=$('saveTileBtn');state.tileSaving=true;setBusy(button,true,'Adding…');
+  try{
+    const result=await call('addTileItem',token,{name:$('tileName').value,sku:$('tileSku').value,sheetName:$('tileSheet').value,location:$('tileLocation').value,side:$('tileSide').value,boxes:Number($('tileBoxes').value),sfPerBox:Number($('tileSfPerBox').value),price:$('tilePrice').value,notes:$('tileNotes').value});
+    if(state.token!==token)return;$('tileDialog').close();applyInventoryUpdate('tile',result.item);toast(result.name+' added to '+result.sheetName+'.');
+  }catch(error){toast(error.message,true);}finally{state.tileSaving=false;setBusy(button,false,'Add tile');}
+}
 function applyInventoryUpdate(category,item){
   invalidateHistory();
   state.categoryRevisions[category]=(state.categoryRevisions[category]||0)+1;
@@ -521,6 +549,10 @@ async function loadHistory(force){
   finally{if(state.token===token && state.historyRevision===revision)setBusy($('historyRefreshBtn'),false,'Refresh');}
 }
 
+function openManualItem(category){
+  if(!state.user || state.user.role==='view'){toast('Your account is view-only. You can search inventory but cannot add items.',true);return;}
+  if(category==='carpet')openRollDialog();else if(category==='tile')openTileDialog();else toast('Connect the vinyl inventory sheet before adding vinyl items.',true);
+}
 async function useScannedSearch(category,code,thickness){
   if(!['carpet','tile','vinyl'].includes(category))return;
   const token=state.token,scan=[String(code||'').slice(0,80),category==='vinyl'?String(thickness||'').slice(0,20):''].filter(Boolean).join(' ');

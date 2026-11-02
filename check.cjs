@@ -16,7 +16,7 @@ assert.equal(vm.runInContext('typeof initializeInventory',ctx),'undefined');
 for(const name of ['setupTestInventory','setupProductionInventory','useCopiedTestInventory'])assert.equal(vm.runInContext('typeof '+name,ctx),'undefined');
 assert.throws(()=>vm.runInContext("requireSession_('',true)",ctx),/session has expired/);
 ctx.LockService={getScriptLock:()=>({waitLock(){},releaseLock(){}})};
-for(const name of ['getAppBootstrap','getInventory','getHistory','adjustInventory','addCarpetRoll','confirmCarpet','moveInventory'])assert.throws(()=>ctx[name](''),/session has expired/,name+' must reject missing login before accessing inventory');
+for(const name of ['getAppBootstrap','getInventory','getHistory','adjustInventory','addCarpetRoll','addTileItem','confirmCarpet','moveInventory'])assert.throws(()=>ctx[name](''),/session has expired/,name+' must reject missing login before accessing inventory');
 console.log('Syntax, estimated quantities, dimension blocking, SF calculation, private setup and missing-session checks passed.');
 if(fs.existsSync('docs/scanner.html'))for(const m of fs.readFileSync('docs/scanner.html','utf8').matchAll(/<script>([\s\S]*?)<\/script>/g))new vm.Script(m[1],{filename:'scanner.html'});
 let cells,history,held=false;
@@ -44,5 +44,4 @@ assert.equal(cells[1],8);assert.equal(cells[3],100);assert.equal(history.length,
 assert.throws(()=>ctx.adjustInventory('employee',{category:'tile',inventoryId:'TEST',action:'add',amount:0.5}),/whole number/);
 assert.throws(()=>ctx.adjustInventory('view',{category:'tile',action:'add',amount:1}),/permission/);assert.equal(held,false);
 console.log('Isolated adjustment tests passed: E- preservation, tile box/SF writes, history, negative/fractional rejection, view-only rejection, lock release.');
-
 

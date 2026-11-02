@@ -9,6 +9,7 @@
     :root{font-family:ui-sans-serif,system-ui,-apple-system,sans-serif;color:#22332f;background:#f5f6f2}*{box-sizing:border-box}body{margin:0;padding:24px 16px;line-height:1.5}.wrap{max-width:720px;margin:auto;display:grid;gap:16px}.card{background:#fff;border:1px solid #dfe5df;border-radius:18px;padding:24px;box-shadow:0 6px 25px #173f3b04}h1{font-size:27px;letter-spacing:-.04em;line-height:1.2;margin:14px 0 10px}.back-link{color:#527363;font-size:12px;text-decoration:none}.camera{background:#173f3b;border-radius:14px;overflow:hidden;min-height:240px;display:grid;place-items:center}video,canvas{width:100%;max-height:65vh;object-fit:contain}.hidden{display:none!important}.btn{border:0;border-radius:12px;padding:12px 16px;font:inherit;font-size:13px;font-weight:650;min-height:46px;cursor:pointer}.btn:disabled{opacity:.5;cursor:wait}.primary{background:#173f3b;color:#fff}.secondary{background:#edf4f0;color:#173f3b}.actions{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:14px 0}.result,.manual{display:grid;grid-template-columns:1fr 1fr;gap:10px}.manual{margin-top:20px}.field{background:#f1f5ed;border-radius:12px;padding:12px}.field small{display:block;color:#7e8b80;font-size:10px;font-weight:650;text-transform:uppercase;letter-spacing:.1em;margin-bottom:4px}.field strong{font-size:25px;letter-spacing:-.03em}.status{font-size:13px;color:#6a7772}label{display:grid;gap:7px;font-size:12px;color:#66796b}input{width:100%;min-width:0;border:1px solid #dfe5df;border-radius:12px;padding:12px 13px;font:inherit;font-size:16px;min-height:44px}button:focus-visible,a:focus-visible,input:focus-visible{outline:3px solid #418e7d;outline-offset:3px}@media(max-width:560px){.card{padding:18px}.camera{min-height:220px}.field{padding:10px}.field strong{font-size:22px}}
   </style>
   <style>.scan-type{margin-top:16px;max-width:260px}select{font:inherit;font-size:16px;min-height:44px;border:1px solid #dfe5df;border-radius:10px;padding:10px;background:white;color:inherit}.suggestions{display:flex;gap:8px;flex-wrap:wrap;margin:14px 0}.suggestions button{font:inherit;font-size:12px;border:1px solid #dfe5df;border-radius:9px;background:#f5f7f2;color:#365e50;text-align:left;padding:9px 11px;max-width:100%;overflow-wrap:anywhere;cursor:pointer}.suggestions button[aria-pressed="true"]{background:#e6efe7;border-color:#719480}.suggestions button small{display:block;color:#6a7772;font-size:10px;margin-bottom:3px}.scan-copy{font-size:12px;color:#6a7772;margin-top:16px}.label-text{margin:16px 0;font-size:12px;color:#6a7772}.label-text summary{cursor:pointer;padding:8px 0}textarea{font:inherit;font-size:14px;width:100%;min-height:120px;border:1px solid #dfe5df;border-radius:10px;padding:12px;background:#f8faf6;resize:vertical}.result.single{grid-template-columns:1fr}.manual.single{grid-template-columns:1fr}</style>
+  <style>.photo-stage{position:relative;width:100%;overflow:hidden;line-height:0}#canvas{display:block;width:100%;height:auto;max-height:none;touch-action:none}.crop-box{position:absolute;border:2px solid #74c6aa;background:#74c6aa12;box-shadow:0 0 0 3000px #0005;pointer-events:none}.crop-fields{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}.manual-fallback{background:#edf4e7;border:1px solid #cadcc1;border-radius:12px;padding:14px;margin:14px 0;font-size:13px}.manual-fallback p{font-size:12px;color:#58705f;margin-bottom:0}@media(max-width:560px){.crop-fields{grid-template-columns:repeat(2,minmax(0,1fr))}}</style>
 </head>
 <body>
   <div class="wrap">
@@ -17,8 +18,16 @@
       <label class="scan-type">Label type<select id="scanCategory"><option value="carpet">Carpet</option><option value="tile">Tile</option><option value="vinyl">Vinyl</option></select></label>
       <h1 id="scannerTitle">Scan Label</h1>
       <p id="scanHelp" class="status"></p>
-      <div class="camera"><video id="video" playsinline autoplay></video><canvas id="canvas" class="hidden"></canvas></div>
+      <div class="camera"><video id="video" playsinline autoplay></video><div id="photoStage" class="photo-stage hidden"><canvas id="canvas"></canvas><div id="cropBox" class="crop-box hidden"></div></div></div>
+      <div id="photoControls" class="hidden">
+        <div class="actions"><button id="rotateLeft" type="button" class="btn secondary">↶ Rotate left</button><button id="rotateRight" type="button" class="btn secondary">↷ Rotate right</button></div>
+        <p class="status">Drag a box around one label. Keep the product name and codes; leave out nearby labels.</p>
+        <details class="label-text"><summary>Adjust crop precisely</summary><div class="crop-fields"><label>Left (%)<input id="cropLeft" type="number" min="0" max="99" value="0"></label><label>Top (%)<input id="cropTop" type="number" min="0" max="99" value="0"></label><label>Right (%)<input id="cropRight" type="number" min="1" max="100" value="100"></label><label>Bottom (%)<input id="cropBottom" type="number" min="1" max="100" value="100"></label></div></details>
+        <div class="actions"><button id="readPhoto" type="button" class="btn primary">Read label</button><button id="clearCrop" type="button" class="btn secondary">Use full photo</button></div>
+      </div>
       <p id="status" class="status" role="status" aria-live="polite">Starting camera…</p>
+      <p id="failureCount" class="status hidden"></p>
+      <div id="manualFallback" class="manual-fallback hidden" role="status"><strong>No clear result after 3 tries</strong><p>Enter a name or SKU to search, or create a new item in inventory.</p><div class="actions"><button id="manualSearch" type="button" class="btn secondary">Search manually</button><button id="manualAdd" type="button" class="btn primary">Add new item</button></div></div>
       <div class="actions"><button id="capture" class="btn primary" disabled>Capture & Read</button><button id="retry" class="btn secondary">Restart Camera</button></div>
       <label>Or upload a label photo<input id="photoInput" type="file" accept="image/*"></label>
     </div>
@@ -30,6 +39,7 @@
       </div>
       <p class="scan-copy">Check the detected text or choose another suggestion, then search for the matching item.</p>
       <div id="scanSuggestions" class="suggestions" role="group" aria-label="Detected label text"></div>
+      <button id="rejectResult" type="button" class="btn secondary hidden">This text isn't right</button>
       <div id="manualFields" class="manual">
         <label><span id="queryLabel">Search name or code</span><input id="codeInput" maxlength="80" autocomplete="off" autocapitalize="none"></label>
         <label id="thicknessField">Correct thickness (mm)<input id="thicknessInput" inputmode="decimal" maxlength="20"></label>
@@ -41,7 +51,7 @@
   <script src="label-reader.js"></script>
   <script>
     let stream=null,ocrLoading=null,reading=false,cameraRequest=0;
-    let lastLabelText='';
+    let lastLabelText='',failedScans=0,awaitingReview=false,sourcePhoto=null,photoTurns=0,cropRect=null,photoRequest=0;
     const $=id=>document.getElementById(id);
     function currentCategory(){return labelScanCategory($('scanCategory').value);}
     function selectSearchText(value){
@@ -66,6 +76,43 @@
       const base=new URLSearchParams(location.search).get('returnUrl')||'https://shloimyusb.github.io/flair-inventory-app/app.html';
       document.querySelector('.back-link').href=labelScanReturnUrl(base,category,'','')||'app.html';
       showLabelSuggestions(lastLabelText);
+      failedScans=0;awaitingReview=!!$('codeInput').value;$('rejectResult').classList.toggle('hidden',!awaitingReview);updateScanFailures();
+    }
+    function updateScanFailures(){
+      $('failureCount').textContent=failedScans+' unsuccessful scan'+(failedScans===1?'':'s')+' in a row';$('failureCount').classList.toggle('hidden',!failedScans);
+      $('manualFallback').classList.toggle('hidden',failedScans<3);$('manualAdd').classList.toggle('hidden',currentCategory()==='vinyl');
+    }
+    function failScan(){failedScans=labelScanFailures(failedScans,'failed');awaitingReview=false;updateScanFailures();}
+    function rejectCurrentRead(){if(awaitingReview)failScan();$('rejectResult').classList.add('hidden');}
+    function showCameraView(){$('photoStage').classList.add('hidden');$('photoControls').classList.add('hidden');$('video').classList.remove('hidden');}
+    function clearCrop(){cropRect=null;for(const [id,value] of [['cropLeft',0],['cropTop',0],['cropRight',100],['cropBottom',100]])$(id).value=value;$('cropBox').classList.add('hidden');}
+    function drawCropBox(){
+      const box=$('cropBox');if(!cropRect){box.classList.add('hidden');return;}box.classList.remove('hidden');
+      box.style.left=cropRect.x*100+'%';box.style.top=cropRect.y*100+'%';box.style.width=cropRect.w*100+'%';box.style.height=cropRect.h*100+'%';
+      for(const [id,value] of [['cropLeft',cropRect.x],['cropTop',cropRect.y],['cropRight',cropRect.x+cropRect.w],['cropBottom',cropRect.y+cropRect.h]])$(id).value=Math.round(value*100);
+    }
+    function drawPhoto(){
+      if(!sourcePhoto)return;const c=$('canvas'),odd=photoTurns%2;c.width=odd?sourcePhoto.height:sourcePhoto.width;c.height=odd?sourcePhoto.width:sourcePhoto.height;
+      const context=c.getContext('2d');context.translate(c.width/2,c.height/2);context.rotate(photoTurns*Math.PI/2);context.drawImage(sourcePhoto,-sourcePhoto.width/2,-sourcePhoto.height/2);
+      $('video').classList.add('hidden');$('photoStage').classList.remove('hidden');$('photoControls').classList.remove('hidden');clearCrop();
+    }
+    function setPhotoSource(source,width,height){
+      const scale=Math.min(1,2000/Math.max(width,height)),c=document.createElement('canvas');c.width=Math.max(1,Math.round(width*scale));c.height=Math.max(1,Math.round(height*scale));c.getContext('2d').drawImage(source,0,0,c.width,c.height);sourcePhoto=c;photoTurns=0;drawPhoto();
+    }
+    async function uploadPhoto(file){
+      const request=++photoRequest;stopCamera();const url=URL.createObjectURL(file),image=new Image();
+      try{await new Promise((resolve,reject)=>{image.onload=resolve;image.onerror=reject;image.src=url;});if(request!==photoRequest)return;setPhotoSource(image,image.naturalWidth,image.naturalHeight);await readCurrentPhoto();}
+      catch(error){failScan();$('status').textContent='Could not open this photo. Try a JPG/PNG photo or enter the item manually.';}finally{URL.revokeObjectURL(url);}
+    }
+    async function readCurrentPhoto(){
+      if(!sourcePhoto || reading)return;const source=$('canvas'),r=cropRect||{x:0,y:0,w:1,h:1};
+      const width=Math.max(1,Math.round(source.width*r.w)),height=Math.max(1,Math.round(source.height*r.h)),scale=Math.min(3,Math.max(1,1200/Math.max(width,height))),crop=document.createElement('canvas');crop.width=Math.round(width*scale);crop.height=Math.round(height*scale);
+      crop.getContext('2d').drawImage(source,source.width*r.x,source.height*r.y,width,height,0,0,crop.width,crop.height);await readLabel(crop);
+    }
+    function cropFromFields(){
+      const x=Number($('cropLeft').value)/100,y=Number($('cropTop').value)/100,right=Number($('cropRight').value)/100,bottom=Number($('cropBottom').value)/100;
+      if([x,y,right,bottom].some(value=>!Number.isFinite(value)||value<0||value>1)||right<=x||bottom<=y)return;
+      cropRect={x,y,w:right-x,h:bottom-y};drawCropBox();
     }
     async function startCamera(){
       if(reading)return;
@@ -81,34 +128,46 @@
     }
     async function capture(){
       const v=$('video'),c=$('canvas'); if(!v.videoWidth){$('status').textContent='Camera is not ready yet.';return}
-      c.width=v.videoWidth;c.height=v.videoHeight;c.getContext('2d').drawImage(v,0,0,c.width,c.height);stopCamera();await readLabel(c);
+      setPhotoSource(v,v.videoWidth,v.videoHeight);stopCamera();await readCurrentPhoto();
     }
     async function readLabel(source){
-      if(reading)return;reading=true;lastLabelText='';showLabelSuggestions('');for(const id of ['capture','retry','scanAgain','photoInput','scanCategory','useResult'])$(id).disabled=true;
+      if(reading)return;rejectCurrentRead();reading=true;lastLabelText='';showLabelSuggestions('');for(const id of ['capture','retry','scanAgain','photoInput','scanCategory','useResult','rotateLeft','rotateRight','readPhoto','clearCrop','manualAdd'])$(id).disabled=true;
       $('status').textContent='Reading label…';
       try{
         await loadOcr();
         const r=await Tesseract.recognize(source,'eng',{logger:m=>{if(m.status==='recognizing text')$('status').textContent=`Reading label… ${Math.round((m.progress||0)*100)}%`}});
         lastLabelText=String(r.data.text||'').slice(0,6000);showLabelSuggestions(lastLabelText);
+        awaitingReview=!!$('codeInput').value;$('rejectResult').classList.toggle('hidden',!awaitingReview);if(!awaitingReview)failScan();
         $('resultCard').classList.remove('hidden');$('status').textContent=$('codeInput').value?'Check the result before searching inventory.':'No product text found. Enter a name or code below, or try another photo.';
-      }catch(e){$('status').textContent='Could not read the label. Try again with less glare or enter it manually.';$('resultCard').classList.remove('hidden')}
-      finally{reading=false;for(const id of ['retry','scanAgain','photoInput','scanCategory','useResult'])$(id).disabled=false;$('capture').disabled=!stream;}
+      }catch(e){failScan();$('status').textContent='Could not read the label. Try again with less glare or enter it manually.';$('resultCard').classList.remove('hidden')}
+      finally{reading=false;for(const id of ['retry','scanAgain','photoInput','scanCategory','useResult','rotateLeft','rotateRight','readPhoto','clearCrop','manualAdd'])$(id).disabled=false;$('capture').disabled=!stream;}
     }
-    function sendResult(){
+    function sendResult(action){
       if(reading)return;
+      action=action==='add'?'add':'';
       const category=currentCategory(),code=labelScanText($('codeInput').value).slice(0,80),thickness=category==='vinyl'?$('thicknessInput').value.trim():'';
-      if(!code && !thickness){$('status').textContent='Enter a product name or code first.';return}
+      if(!action && !code && !thickness){$('status').textContent='Enter a product name or code first.';return}
+      failedScans=labelScanFailures(failedScans,'accepted');awaitingReview=false;updateScanFailures();
       const returnUrl=new URLSearchParams(location.search).get('returnUrl');
-      const destination=labelScanReturnUrl(returnUrl||'https://shloimyusb.github.io/flair-inventory-app/app.html',category,code,thickness);
+      const destination=labelScanReturnUrl(returnUrl||'https://shloimyusb.github.io/flair-inventory-app/app.html',category,action?'':code,action?'':thickness,action);
       if(destination){stopCamera();location.assign(destination);return;}
       const params=new URLSearchParams(location.search),origin=params.get('returnOrigin'),nonce=params.get('nonce');
       if(window.opener && origin && /^https:\/\/([a-z0-9-]+-script\.googleusercontent\.com|script\.google\.com)$/.test(origin)){window.opener.postMessage({type:'flair-inventory-scan',category,code,thickness,nonce},origin);window.close()} else {$('status').textContent='Open this scanner from Flair Inventory to return the result.'}
     }
     $('scanCategory').value=labelScanCategory(new URLSearchParams(location.search).get('category'));configureScanCategory();
     $('scanCategory').addEventListener('change',configureScanCategory);
-    $('codeInput').addEventListener('input',()=>{$('codeText').textContent=$('codeInput').value||'—';});
-    $('photoInput').addEventListener('change',e=>{const file=e.target.files[0];if(file){stopCamera();readLabel(file)}});
-    $('capture').addEventListener('click',capture);$('retry').addEventListener('click',startCamera);$('scanAgain').addEventListener('click',startCamera);$('useResult').addEventListener('click',sendResult);window.addEventListener('pagehide',stopCamera);startCamera();
+    $('codeInput').addEventListener('input',()=>{$('codeText').textContent=$('codeInput').value||'—';$('scanSuggestions').querySelectorAll('button').forEach(button=>button.setAttribute('aria-pressed',String(button.dataset.query===$('codeInput').value)));});
+    $('photoInput').addEventListener('change',e=>{const file=e.target.files[0];if(file)uploadPhoto(file);});
+    $('rotateLeft').addEventListener('click',()=>{photoTurns=(photoTurns+3)%4;drawPhoto();});$('rotateRight').addEventListener('click',()=>{photoTurns=(photoTurns+1)%4;drawPhoto();});$('readPhoto').addEventListener('click',readCurrentPhoto);$('clearCrop').addEventListener('click',clearCrop);
+    for(const id of ['cropLeft','cropTop','cropRight','cropBottom'])$(id).addEventListener('input',cropFromFields);
+    let dragStart=null;
+    const point=event=>{const rect=$('canvas').getBoundingClientRect();return{x:Math.max(0,Math.min(1,(event.clientX-rect.left)/rect.width)),y:Math.max(0,Math.min(1,(event.clientY-rect.top)/rect.height))};};
+    $('canvas').addEventListener('pointerdown',event=>{if(reading)return;dragStart=point(event);$('canvas').setPointerCapture(event.pointerId);});
+    $('canvas').addEventListener('pointermove',event=>{if(!dragStart || reading)return;const p=point(event);cropRect={x:Math.min(p.x,dragStart.x),y:Math.min(p.y,dragStart.y),w:Math.abs(p.x-dragStart.x),h:Math.abs(p.y-dragStart.y)};drawCropBox();});
+    for(const name of ['pointerup','pointercancel'])$('canvas').addEventListener(name,()=>{if(cropRect && (cropRect.w<.01||cropRect.h<.01))clearCrop();dragStart=null;});
+    $('rejectResult').addEventListener('click',()=>{rejectCurrentRead();selectSearchText('');$('status').textContent='Try rotating or cropping the label, or enter the item manually.';});
+    $('manualSearch').addEventListener('click',()=>{$('codeInput').scrollIntoView({block:'center'});$('codeInput').focus();});$('manualAdd').addEventListener('click',()=>sendResult('add'));
+    $('capture').addEventListener('click',capture);for(const id of ['retry','scanAgain'])$(id).addEventListener('click',()=>{rejectCurrentRead();showCameraView();startCamera();});$('useResult').addEventListener('click',()=>sendResult(''));window.addEventListener('pagehide',stopCamera);startCamera();
   </script>
 </body>
 </html>

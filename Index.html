@@ -11,6 +11,7 @@
   <input type="hidden" id="initialScanCode" value="<?= initialScanCode ?>">
   <input type="hidden" id="initialScanThickness" value="<?= initialScanThickness ?>">
   <input type="hidden" id="initialScanCategory" value="<?= initialScanCategory ?>">
+  <input type="hidden" id="initialScanAction" value="<?= initialScanAction ?>">
   <input type="hidden" id="initialLoginHostNonce" value="<?= initialLoginHostNonce ?>">
 
   <main id="loginView" class="login-shell">
@@ -56,6 +57,7 @@
         <div class="toolbar-actions">
           <a id="scanBtn" class="btn secondary" role="button" target="_top" style="text-decoration:none">Scan Carpet Label</a>
           <button id="addRollBtn" class="btn primary">+ Add New Roll</button>
+          <button id="addTileBtn" class="btn primary hidden">+ Add New Tile</button>
         </div>
       </div>
 
@@ -123,6 +125,25 @@
       </div>
       <label>Notes <span class="muted">(optional)</span><textarea id="rollNotes" rows="3"></textarea></label>
       <div class="modal-actions"><button type="submit" formnovalidate value="cancel" class="btn ghost">Cancel</button><button id="saveRollBtn" type="button" class="btn primary">Add roll</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="tileDialog" class="modal wide">
+    <form method="dialog" id="tileForm" class="stack">
+      <div class="modal-head"><h3>Add New Tile</h3><button type="submit" formnovalidate value="cancel" class="icon-btn" aria-label="Close new tile">×</button></div>
+      <div class="form-grid">
+        <label>Tile name<input id="tileName" maxlength="200" required></label>
+        <label>SKU / item code<input id="tileSku" maxlength="100"></label>
+        <label>Destination bay<select id="tileSheet" required></select></label>
+        <label>Location<input id="tileLocation" maxlength="100" placeholder="A, B, C, D…"></label>
+        <label>Right / Left<select id="tileSide"><option value="">Not set</option><option>Left</option><option>Right</option></select></label>
+        <label>Boxes<input id="tileBoxes" type="number" min="0" step="1" required></label>
+        <label>SF per box<input id="tileSfPerBox" type="number" min="0.01" step="0.01" required></label>
+        <label>Price per SF <span class="muted">(optional)</span><input id="tilePrice" type="number" min="0" step="0.01"></label>
+      </div>
+      <div class="info-box" role="status">Total on hand: <strong id="tileTotalSf">— SF</strong></div>
+      <label>Notes <span class="muted">(optional)</span><textarea id="tileNotes" rows="2" maxlength="2000"></textarea></label>
+      <div class="modal-actions"><button type="submit" formnovalidate value="cancel" class="btn ghost">Cancel</button><button id="saveTileBtn" type="button" class="btn primary">Add tile</button></div>
     </form>
   </dialog>
 
