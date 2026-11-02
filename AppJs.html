@@ -14,6 +14,7 @@ const state = {
   cardSize: 285,
   carpetSheets: [],
   inventorySheets: {},
+  sheetNamesPending: null,
   moveItem: null,
   moveSaving: false,
   adjustItem: null,
@@ -84,7 +85,7 @@ async function allowLoginFrame(){
 }
 async function restoreLogin(){
   $('retrySavedLoginBtn').classList.add('hidden');$('savedLoginNotice').classList.add('hidden');
-  $('restoreStatus').textContent='Restoring your saved login…';
+  $('restoreStatus').textContent='Checking your saved session…';
   const tokens=await savedLoginTokens();if(!tokens.length){state.token='';return false;}
   $('loginForm').classList.add('hidden');$('restoreStatus').classList.remove('hidden');
   for(const token of tokens){
@@ -156,28 +157,38 @@ async function login(e){
 }
 
 async function bootstrap(){
-  const data = await call('getAppBootstrap',state.token);
-  state.loadedCategories={carpet:{items:data.inventory||[],loadedAt:Date.now()}};
-  for(const [category,items] of Object.entries(data.preloadedInventory||{}))if(['tile','vinyl'].includes(category) && Array.isArray(items))state.loadedCategories[category]={items,loadedAt:Date.now()};
+  const token=state.token;
+  const data = await startupCall('getAppBootstrap',token);
+  if(state.token!==token)return;
+  state.loadedCategories={};
+  if(data.inventoryLoaded!==false && Array.isArray(data.inventory))state.loadedCategories.carpet={items:data.inventory,loadedAt:Date.now()};
+  for(const [category,items] of Object.entries(data.preloadedInventory||{}))if(['carpet','tile','vinyl'].includes(category) && Array.isArray(items))state.loadedCategories[category]={items,loadedAt:Date.now()};
   state.pendingCategories={};
   state.categoryRevisions={};
   state.user=data.user; state.carpetSheets=data.carpetSheets||[]; state.scannerUrl=data.scannerUrl||'';state.appUrl=data.appUrl||'';
   state.viewMode=readInventoryView(state.user.email);$('inventoryViewMode').value=state.viewMode;
   state.cardSize=readCardSize(state.user.email);
-  if(loginHostNonce()){
-    const preferences=await loginHostRequest('read-card-size',{email:state.user.email});
-    if(preferences && preferences.ok){state.cardSize=validCardSize(preferences.size);if(['cards','compact','table'].includes(preferences.view))state.viewMode=preferences.view;}
-  }
+  // Browser preferences are cosmetic and must not block the signed-in app.
+  const initialView=state.viewMode,initialSize=state.cardSize;
+  if(loginHostNonce())loginHostRequest('read-card-size',{email:state.user.email}).then(preferences=>{
+    if(state.token!==token || !preferences || !preferences.ok)return;
+    if(state.cardSize===initialSize)state.cardSize=validCardSize(preferences.size);
+    if(state.viewMode===initialView && ['cards','compact','table'].includes(preferences.view))state.viewMode=preferences.view;
+    $('inventoryViewMode').value=state.viewMode;applyCardSize();
+    if(state.loadedCategories[state.category])renderInventory();
+  });
   $('inventoryViewMode').value=state.viewMode;
   state.historyCache=null;state.historyPending=null;state.historyRevision++;
   applyCardSize();
   state.inventorySheets=data.inventorySheets||{carpet:state.carpetSheets};
+  state.sheetNamesPending=null;
   state.vinylConfigured=!!data.vinylConfigured;
   $('testBanner').classList.toggle('hidden',data.environment==='production');
   $('userName').textContent=state.user.name;
   $('loginView').classList.add('hidden'); $('appView').classList.remove('hidden');
   switchView('inventory');
   populateRollSheets();
+  ensureSheetNames().catch(()=>{});
   const code=$('initialScanCode').value,thickness=$('initialScanThickness').value,requested=$('initialScanCategory').value;
   const category=['carpet','tile','vinyl'].includes(requested)?requested:(code||thickness?'vinyl':'carpet');
   const scanToken=state.token;await useScannedSearch(category,code,thickness);
@@ -187,15 +198,36 @@ async function bootstrap(){
   $('initialScanCode').value='';$('initialScanThickness').value='';$('initialScanCategory').value='';
   $('initialScanAction').value='';
   // Warm the other tabs while the employee is viewing the first category.
-  if(!state.loadedCategories.tile)fetchInventoryCategory('tile',false).catch(()=>{});
+  for(const other of ['carpet','tile'])if(other!==state.category && !state.loadedCategories[other])fetchInventoryCategory(other,false).catch(()=>{});
   if(state.vinylConfigured && !state.loadedCategories.vinyl)fetchInventoryCategory('vinyl',false).catch(()=>{});
   window.scrollTo(0,0);
+}
+
+function startupCall(fn,...args){
+  let timer;
+  const timeout=new Promise((_,reject)=>{timer=setTimeout(()=>reject(new Error('The app could not connect. Your saved sign-in is still here; try again.')),25000);});
+  return Promise.race([call(fn,...args),timeout]).finally(()=>clearTimeout(timer));
+}
+
+function ensureSheetNames(category){
+  const needed=category?[category]:['carpet','tile',...(state.vinylConfigured?['vinyl']:[])];
+  if(needed.every(kind=>(state.inventorySheets[kind]||[]).length))return Promise.resolve();
+  if(state.sheetNamesPending)return state.sheetNamesPending.promise.then(()=>{
+    if(category && !(state.inventorySheets[category]||[]).length)throw new Error('Could not load destination bays. Please try again.');
+  });
+  const token=state.token,job={};state.sheetNamesPending=job;
+  job.promise=startupCall('getInventorySheetNames',token).then(sheets=>{
+    if(state.token!==token)throw new Error('Session changed. Please sign in again.');
+    state.inventorySheets=sheets;state.carpetSheets=sheets.carpet||[];
+    if(category && !(sheets[category]||[]).length)throw new Error('Could not load destination bays. Please try again.');
+  }).finally(()=>{if(state.sheetNamesPending===job)state.sheetNamesPending=null;});
+  return job.promise;
 }
 
 function showLogin(){ $('loginForm').classList.remove('hidden');$('restoreStatus').classList.add('hidden');$('loginView').classList.remove('hidden'); $('appView').classList.add('hidden'); }
 async function logout(){
   const token=state.token;state.token='';state.user=null;state.inventoryRequest++;state.historyRevision++;
-  state.loadedCategories={};state.pendingCategories={};state.allInventory=[];state.inventory=[];state.historyCache=null;state.historyPending=null;
+  state.loadedCategories={};state.pendingCategories={};state.sheetNamesPending=null;state.inventorySheets={};state.carpetSheets=[];state.allInventory=[];state.inventory=[];state.historyCache=null;state.historyPending=null;
   for(const id of ['adjustDialog','rollDialog','tileDialog','moveDialog'])$(id).close();
   $('inventoryGrid').innerHTML='';$('historyList').innerHTML='';$('rememberMe').checked=false;
   await clearLoginToken();showLogin();
@@ -424,9 +456,14 @@ async function saveCarpetConfirmation(item,button){
   } catch(error){toast(error.message,true);} finally {setBusy(button,false,label);}
 }
 
-function openMove(item,field){
+async function openMove(item,field){
   if(state.user.role==='view'){toast('Your account is view-only.',true);return;}
   if(state.moveSaving){toast('Your previous move is still saving.');return;}
+  if(!(state.inventorySheets[item.category]||[]).length){
+    const token=state.token;toast('Loading destination bays…');
+    try{await ensureSheetNames(item.category);}catch(error){toast(error.message,true);return;}
+    if(state.token!==token || !state.user || state.user.role==='view')return;
+  }
   state.moveItem=item;
   $('moveTitle').textContent='Move '+item.name;
   const sheets=[...new Set([...(state.inventorySheets[item.category]||[]),item.sourceSheet])];
@@ -484,7 +521,16 @@ async function saveAdjustment(){
 function populateRollSheets(){
   $('rollSheet').innerHTML=state.carpetSheets.map(s=>`<option value="${escAttr(s)}">${esc(s)}</option>`).join('');
 }
-function openRollDialog(){ if(state.user.role==='view'){toast('Your account is view-only.',true);return}if(state.rollSaving){toast('Your roll is still saving.');return;} $('rollForm').reset(); populateRollSheets(); $('rollDialog').showModal(); }
+async function openRollDialog(){
+  if(state.user.role==='view'){toast('Your account is view-only.',true);return;}
+  if(state.rollSaving){toast('Your roll is still saving.');return;}
+  if(!state.carpetSheets.length){
+    const token=state.token;toast('Loading destination bays…');
+    try{await ensureSheetNames('carpet');}catch(error){toast(error.message,true);return;}
+    if(state.token!==token || !state.user || state.user.role==='view')return;
+  }
+  $('rollForm').reset();populateRollSheets();$('rollDialog').showModal();
+}
 async function saveRoll(){
   if(state.rollSaving || !$('rollForm').reportValidity())return;
   const btn=$('saveRollBtn'),token=state.token;state.rollSaving=true;setBusy(btn,true,'Adding…');
@@ -496,9 +542,14 @@ async function saveRoll(){
 }
 
 function invalidateHistory(){state.historyCache=null;state.historyRevision++;}
-function openTileDialog(){
+async function openTileDialog(){
   if(state.user.role==='view'){toast('Your account is view-only.',true);return;}
   if(state.tileSaving){toast('Your tile is still saving.');return;}
+  if(!(state.inventorySheets.tile||[]).length){
+    const token=state.token;toast('Loading destination bays…');
+    try{await ensureSheetNames('tile');}catch(error){toast(error.message,true);return;}
+    if(state.token!==token || !state.user || state.user.role==='view')return;
+  }
   $('tileForm').reset();$('tileSheet').innerHTML=(state.inventorySheets.tile||[]).map(name=>`<option value="${escAttr(name)}">${esc(name)}</option>`).join('');
   const bay=$('bayFilter').value;if(bay && [...$('tileSheet').options].some(option=>option.value===bay))$('tileSheet').value=bay;
   updateTileTotal();$('tileDialog').showModal();

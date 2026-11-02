@@ -1,15 +1,21 @@
 function getAppBootstrap(token) {
   const user = requireSession_(token, false);
-  const inventory = getInventory_('carpet', '', false);
-  const carpetSheets = safeSheetNames_('carpet');
-  const tile = cachedInventory_('tile');
+  // Session restoration must never wait for a cold scan of the workbooks.
+  const inventory = cachedInventory_('carpet');
+  const carpetSheets = cachedSheetNames_('carpet') || [];
+  const preloadedInventory = {};
+  for (const category of APP.CATEGORIES) {
+    const items = category === 'carpet' ? inventory : cachedInventory_(category);
+    if (items) preloadedInventory[category] = items;
+  }
   return {
     user,
-    inventory,
+    inventory: inventory || [],
+    inventoryLoaded: inventory !== null,
     categories: APP.CATEGORIES,
     carpetSheets,
-    inventorySheets: {carpet:carpetSheets,tile:safeSheetNames_('tile'),vinyl:safeSheetNames_('vinyl')},
-    preloadedInventory: tile ? {tile} : {},
+    inventorySheets: {carpet:carpetSheets,tile:cachedSheetNames_('tile') || [],vinyl:cachedSheetNames_('vinyl') || []},
+    preloadedInventory,
     vinylConfigured: !!PropertiesService.getScriptProperties().getProperty('VINYL_SPREADSHEET_ID'),
     scannerUrl: PropertiesService.getScriptProperties().getProperty('SCANNER_URL') || '',
     appUrl: ScriptApp.getService().getUrl(),
@@ -17,10 +23,26 @@ function getAppBootstrap(token) {
   };
 }
 
-function safeSheetNames_(category) {
+function getInventorySheetNames(token) {
+  requireSession_(token, false);
+  return {carpet:safeSheetNames_('carpet'),tile:safeSheetNames_('tile'),vinyl:safeSheetNames_('vinyl')};
+}
+
+function cachedSheetNames_(category) {
   try {
     const raw = CacheService.getScriptCache().get('sheetNames:' + category);
-    if (raw) {const info=JSON.parse(raw);if(info.spreadsheetId===getSpreadsheetId_(category))return info.names;}
+    if (raw) {
+      const info = JSON.parse(raw);
+      if (info.spreadsheetId === getSpreadsheetId_(category) && Array.isArray(info.names)) return info.names;
+    }
+  } catch (e) {}
+  return null;
+}
+
+function safeSheetNames_(category) {
+  try {
+    const cached = cachedSheetNames_(category);
+    if (cached) return cached;
     const names = getInventorySheets_(category).map(s => s.getName());
     try{CacheService.getScriptCache().put('sheetNames:'+category,JSON.stringify({spreadsheetId:getSpreadsheetId_(category),names}),APP.CACHE_SECONDS);}catch(e){}
     return names;
