@@ -180,6 +180,7 @@ async function bootstrap(){
   // Warm the other tabs while the employee is viewing the first category.
   if(!state.loadedCategories.tile)fetchInventoryCategory('tile',false).catch(()=>{});
   if(state.vinylConfigured && !state.loadedCategories.vinyl)fetchInventoryCategory('vinyl',false).catch(()=>{});
+  window.scrollTo(0,0);
 }
 
 function showLogin(){ $('loginForm').classList.remove('hidden');$('restoreStatus').classList.add('hidden');$('loginView').classList.remove('hidden'); $('appView').classList.add('hidden'); }

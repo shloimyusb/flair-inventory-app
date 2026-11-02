@@ -25,9 +25,12 @@ ctx.CacheService={getScriptCache:()=>({remove(){}})};
 ctx.requireSession_=(_token,write)=>{if(write && _token==='view')throw Error('No write permission');return {name:'Test',email:'test@example.invalid'};};
 ctx.updateTimestamp_=()=>{};
 ctx.appendHistory_=(_category,entry)=>{history.push(entry);};
+ctx.appendInventoryHistoryBatch_=(_requests,_ss,_category,entry)=>{history.push(entry);};
+ctx.getSpreadsheet_=()=>({getId:()=> 'test-copy'});
+ctx.Sheets={Spreadsheets:{batchUpdate:body=>{for(const request of body.requests){if(request.updateCells){const cell=request.updateCells.rows[0].values[0].userEnteredValue;cells[request.updateCells.range.startColumnIndex]=cell.stringValue??cell.numberValue??cell.boolValue;}}}}};
 ctx.findRecordById_=(category)=>{
   const headers=category==='carpet'?['Name of carpet','Total on hand']:['Name of Tile','Boxes','SF/Box','Total on hand'];
-  return {sheet:{getName:()=> 'TEST',getLastColumn:()=>cells.length,getRange:(_r,c)=>({setValue:v=>{cells[c-1]=v;},getDisplayValues:()=>[cells.map(String)],getValues:()=>[cells.slice()]})},rowNumber:2,
+  return {sheet:{getName:()=> 'TEST',getSheetId:()=>1,getLastColumn:()=>cells.length,getRange:(_r,c)=>({setValue:v=>{cells[c-1]=v;},getDisplayValues:()=>[cells.map(String)],getValues:()=>[cells.slice()]})},rowNumber:2,
     map:ctx.makeHeaderMap_(headers),row:cells.slice(),displayRow:cells.map(String)};
 };
 cells=['TEST','E-95'];history=[];

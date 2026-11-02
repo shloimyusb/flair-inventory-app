@@ -218,6 +218,8 @@ function adjustInventory_(token, payload) {
   const found = findRecordById_(category, payload.inventoryId);
   if (!found) throw new Error('Inventory item was not found. Refresh and try again.');
   const { sheet, rowNumber, map, displayRow, row } = found;
+  const requests=[],nextRow=row.slice(),nextDisplay=displayRow.slice();
+  const put=(column,value)=>{requests.push(inventoryCellWrite_(sheet.getSheetId(),rowNumber,column,value));nextRow[column]=value;nextDisplay[column]=value instanceof Date?Utilities.formatDate(value,Session.getScriptTimeZone(),'M/d/yyyy'):String(value);};
 
   let before;
   let after;
@@ -236,7 +238,7 @@ function adjustInventory_(token, payload) {
     if (after < 0) throw new Error('This adjustment would make inventory negative.');
     beforeDisplay = displayRow[onHandCol];
     afterDisplay = `${parsed.estimated ? 'E-' : ''}${trimNumber_(after)}`;
-    sheet.getRange(rowNumber, onHandCol + 1).setValue(afterDisplay);
+    put(onHandCol,afterDisplay);
     unit = 'ft';
   } else {
     const boxesCol = getColumn_(map, category, 'boxes');
@@ -246,7 +248,7 @@ function adjustInventory_(token, payload) {
     after = action === 'add' ? before + amount : before - amount;
     if (after < 0) throw new Error('This adjustment would make inventory negative.');
     if (!Number.isInteger(after)) throw new Error('Box adjustments must result in a whole number of boxes.');
-    sheet.getRange(rowNumber, boxesCol + 1).setValue(after);
+    put(boxesCol,after);
     beforeDisplay = String(before);
     afterDisplay = String(after);
     unit = 'boxes';
@@ -255,12 +257,12 @@ function adjustInventory_(token, payload) {
     const onHandCol = getColumn_(map, category, 'onHand');
     const sfPerBox = sfCol >= 0 ? numeric_(row[sfCol]) : null;
     if (onHandCol >= 0 && sfPerBox !== null) {
-      sheet.getRange(rowNumber, onHandCol + 1).setValue(rounded_(after * sfPerBox, 2));
+      put(onHandCol,rounded_(after*sfPerBox,2));
     }
   }
 
-  updateTimestamp_(sheet, rowNumber, map, category);
-  appendHistory_(category, {
+  const dateCol=getColumn_(map,category,'timestamp');if(dateCol>=0)put(dateCol,new Date());
+  appendInventoryHistoryBatch_(requests,getSpreadsheet_(category),category, {
     inventoryId: payload.inventoryId,
     product: String(displayRow[getColumn_(map, category, 'name')] || ''),
     action: action === 'add' ? 'Add' : 'Subtract',
@@ -275,14 +277,9 @@ function adjustInventory_(token, payload) {
     sourceSheet: sheet.getName(),
   });
 
-  CacheService.getScriptCache().remove(`inventory:${category}`);
-  return { ok: true, before: beforeDisplay, after: afterDisplay, item: readUpdatedItem_(category,sheet,rowNumber,map) };
-}
-
-function readUpdatedItem_(category,sheet,rowNumber,map) {
-  const range=sheet.getRange(rowNumber,1,1,sheet.getLastColumn());
-  const display=range.getDisplayValues()[0];
-  return normalizeRow_(category,sheet.getName(),rowNumber,category==='carpet'?display:range.getValues()[0],display,map);
+  Sheets.Spreadsheets.batchUpdate({requests},getSpreadsheet_(category).getId());
+  cacheInventoryChange_(category,sheet,rowNumber,payload.inventoryId);
+  return {ok:true,before:beforeDisplay,after:afterDisplay,item:normalizeRow_(category,sheet.getName(),rowNumber,nextRow,nextDisplay,map)};
 }
 
 function addCarpetRoll(token, data) {
@@ -292,69 +289,43 @@ function addCarpetRoll(token, data) {
 }
 
 function addCarpetRoll_(token, data) {
-  const user = requireSession_(token, true);
-  data = data || {};
-  const name = String(data.name || '').trim();
-  const sheetName = String(data.sheetName || '').trim();
-  const originalQty = Number(data.originalQty);
-  const currentQty = Number(data.currentQty);
-  if (!name) throw new Error('Carpet name is required.');
-  if (!sheetName) throw new Error('Choose a carpet sheet.');
-  if (!Number.isFinite(originalQty) || originalQty <= 0) throw new Error('Original footage must be greater than zero.');
-  if (!Number.isFinite(currentQty) || currentQty < 0) throw new Error('Current footage must be zero or greater.');
-  if (data.price !== '' && data.price !== undefined && data.price !== null && (!Number.isFinite(Number(data.price)) || Number(data.price) < 0)) throw new Error('Price must be a valid nonnegative number.');
-
-  const ss = getSpreadsheet_('carpet');
-  const sheet = ss.getSheetByName(sheetName);
-  if (!sheet || !isInventorySheet_(sheet, 'carpet')) throw new Error('Selected carpet sheet is not valid.');
-
-  ensureInventoryIdColumn_(sheet, 'carpet');
-  const lastCol = sheet.getLastColumn();
-  const headers = sheet.getRange(1, 1, 1, lastCol).getDisplayValues()[0];
-  const map = makeHeaderMap_(headers);
-  const nameCol = getColumn_(map, 'carpet', 'name');
-  const rowNumber = firstBlankInventoryRow_(sheet, nameCol);
-  if (rowNumber > sheet.getMaxRows()) sheet.insertRowsAfter(sheet.getMaxRows(),rowNumber-sheet.getMaxRows());
-  const id = `CAR-${Utilities.getUuid().slice(0, 8).toUpperCase()}`;
-
-  setIfPresent_(sheet, rowNumber, map, 'carpet', 'inventoryId', id);
-  setIfPresent_(sheet, rowNumber, map, 'carpet', 'name', name);
-  setIfPresent_(sheet, rowNumber, map, 'carpet', 'location', data.location || '');
-  setIfPresent_(sheet, rowNumber, map, 'carpet', 'originalQty', originalQty);
-  setIfPresent_(sheet, rowNumber, map, 'carpet', 'onHand', `${data.estimated ? 'E-' : ''}${trimNumber_(currentQty)}`);
-  setIfPresent_(sheet, rowNumber, map, 'carpet', 'pending', '');
-  setIfPresent_(sheet, rowNumber, map, 'carpet', 'photo', data.photo || '');
-  setIfPresent_(sheet, rowNumber, map, 'carpet', 'sample', data.sample || '');
-  setIfPresent_(sheet, rowNumber, map, 'carpet', 'reprice', data.reprice || '');
-  if (data.price !== '' && data.price !== null && data.price !== undefined) setIfPresent_(sheet, rowNumber, map, 'carpet', 'price', Number(data.price));
-  setIfPresent_(sheet, rowNumber, map, 'carpet', 'confirmed', data.confirmed === true);
-  updateTimestamp_(sheet, rowNumber, map, 'carpet');
-
-  const bayCol = getColumn_(map, 'carpet', 'bay');
-  if (bayCol >= 0) {
-    sheet.getRange(rowNumber, bayCol + 1).setValue(literalValue_(data.bay || ''));
-  } else {
-    const tsCol = getColumn_(map, 'carpet', 'timestamp');
-    if (tsCol >= 0 && tsCol + 1 < sheet.getMaxColumns() && tsCol + 1 !== getColumn_(map, 'carpet', 'inventoryId')) sheet.getRange(rowNumber, tsCol + 2).setValue(literalValue_(data.bay || ''));
+  const user=requireSession_(token,true);data=data||{};
+  const name=String(data.name||'').trim(),sheetName=String(data.sheetName||'').trim(),location=String(data.location||'').trim();
+  const originalQty=Number(data.originalQty),currentQty=Number(data.currentQty);
+  if(!name)throw new Error('Carpet name is required.');
+  if(!sheetName)throw new Error('Choose a carpet sheet.');
+  if(!Number.isFinite(originalQty)||originalQty<=0)throw new Error('Original footage must be greater than zero.');
+  if(!Number.isFinite(currentQty)||currentQty<0)throw new Error('Current footage must be zero or greater.');
+  if(data.price!=='' && data.price!==undefined && data.price!==null && (!Number.isFinite(Number(data.price))||Number(data.price)<0))throw new Error('Price must be a valid nonnegative number.');
+  const ss=getSpreadsheet_('carpet'),sheet=ss.getSheetByName(sheetName);
+  if(!sheet || !isInventorySheet_(sheet,'carpet'))throw new Error('Selected carpet sheet is not valid.');
+  const headers=sheet.getRange(1,1,1,sheet.getLastColumn()).getDisplayValues()[0],requests=[];
+  let map=makeHeaderMap_(headers);
+  if(getColumn_(map,'carpet','inventoryId')<0){
+    headers.push(APP.INVENTORY_ID_HEADER);map=makeHeaderMap_(headers);
+    if(headers.length>sheet.getMaxColumns())requests.push({appendDimension:{sheetId:sheet.getSheetId(),dimension:'COLUMNS',length:headers.length-sheet.getMaxColumns()}});
+    requests.push(inventoryCellWrite_(sheet.getSheetId(),1,headers.length-1,APP.INVENTORY_ID_HEADER));
   }
-
-  appendHistory_('carpet', {
-    inventoryId: id,
-    product: name,
-    action: 'New Roll Added',
-    amount: currentQty,
-    unit: 'ft',
-    before: '',
-    after: `${data.estimated ? 'E-' : ''}${trimNumber_(currentQty)}`,
-    employee: user.name,
-    email: user.email,
-    reason: '',
-    notes: data.notes || '',
-    sourceSheet: sheetName,
-  });
-
-  CacheService.getScriptCache().remove('inventory:carpet');
-  return { ok: true, id, name, rowNumber, sheetName, item: readUpdatedItem_('carpet',sheet,rowNumber,map) };
+  if(['name','originalQty','onHand'].some(field=>getColumn_(map,'carpet',field)<0))throw new Error('This bay needs name, ordered amount and on-hand columns. No roll was added.');
+  const rowNumber=emptyMoveRow_(sheet);
+  validateRollLocation_(sheet,rowNumber,getColumn_(map,'carpet','location'),location);
+  if(rowNumber>sheet.getMaxRows()){
+    requests.push({appendDimension:{sheetId:sheet.getSheetId(),dimension:'ROWS',length:rowNumber-sheet.getMaxRows()}});
+    for(const pasteType of ['PASTE_FORMAT','PASTE_DATA_VALIDATION'])requests.push({copyPaste:{source:{sheetId:sheet.getSheetId(),startRowIndex:1,endRowIndex:2,startColumnIndex:0,endColumnIndex:sheet.getLastColumn()},destination:{sheetId:sheet.getSheetId(),startRowIndex:rowNumber-1,endRowIndex:rowNumber,startColumnIndex:0,endColumnIndex:sheet.getLastColumn()},pasteType}});
+  }
+  const id='CAR-'+Utilities.getUuid().toUpperCase(),now=new Date(),row=Array(headers.length).fill(''),display=row.slice();
+  const put=(field,value)=>{const col=getColumn_(map,'carpet',field);if(col<0)return;requests.push(inventoryCellWrite_(sheet.getSheetId(),rowNumber,col,value));row[col]=value;display[col]=value instanceof Date?Utilities.formatDate(value,Session.getScriptTimeZone(),'M/d/yyyy'):typeof value==='boolean'?String(value).toUpperCase():String(value);};
+  put('inventoryId',id);put('name',name);put('location',location);put('originalQty',originalQty);
+  put('onHand',(data.estimated?'E-':'')+trimNumber_(currentQty));put('pending','');put('photo',data.photo||'');
+  put('sample',data.sample||'');put('reprice',data.reprice||'');if(data.price!=='' && data.price!=null)put('price',Number(data.price));
+  put('confirmed',data.confirmed===true);put('timestamp',now);
+  const bayCol=moveBayColumn_(headers,map,'carpet');
+  if(bayCol>=0){const bay=String(data.bay||'');requests.push(inventoryCellWrite_(sheet.getSheetId(),rowNumber,bayCol,bay));row[bayCol]=bay;display[bayCol]=bay;}
+  else if(data.bay)throw new Error('The selected bay has no bay-notes column. No roll was added.');
+  appendInventoryHistoryBatch_(requests,ss,'carpet',{inventoryId:id,product:name,action:'New Roll Added',amount:currentQty,unit:'ft',before:'',after:(data.estimated?'E-':'')+trimNumber_(currentQty),employee:user.name,email:user.email,reason:'',notes:data.notes||'',sourceSheet:sheetName});
+  Sheets.Spreadsheets.batchUpdate({requests},ss.getId());
+  cacheInventoryChange_('carpet',sheet,rowNumber,id);
+  return {ok:true,id,name,rowNumber,sheetName,item:normalizeRow_('carpet',sheetName,rowNumber,row,display,map)};
 }
 
 function getHistory(token, limit) {

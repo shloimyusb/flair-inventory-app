@@ -40,7 +40,7 @@ Run node check.cjs in this repository, or node tests/check.cjs in the grouped lo
 
 Hosted checks use only TEST workbooks: subtract/add carpet footage, add a new roll, subtract/add tile boxes, inspect history, test view-only access, and verify scanner results return to the app. Live production quantities should only be read during deployment verification.
 
-Google Sheets and Apps Script do not provide a cross-service transaction here. The script lock serializes app writes; users should refresh and check history before retrying an adjustment after a connection error. Direct concurrent edits in Google Sheets are outside the app lock.
+Stock adjustments, new rolls and moves send their inventory fields and audit entry in one Sheets batch; rejected batches save neither. New rolls validate the destination location before any write and skip rows containing other values, formulas or notes. Existing formats and validations are preserved. Carpet confirmation retains its rollback path. The script lock serializes app writes; users should refresh and check history before retrying after a connection error because a lost response can occur after a successful save. Direct concurrent edits in Google Sheets remain outside the app lock. Run atomic-write-check.cjs (or node tests/atomic-write-check.cjs locally) for validation and rejected-batch checks.
 
 
 ## Loading performance
