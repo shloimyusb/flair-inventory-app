@@ -28,6 +28,7 @@ assert.equal(new URL(reader.labelScanReturnUrl(base,'tile','x'.repeat(1000),''))
 assert.equal(reader.labelScanReturnUrl('https://evil.example/app','tile','SKU',''),null);assert.equal(reader.labelScanReturnUrl('https://script.google.com/macros/s/unknown/exec','tile','SKU',''),null);
 assert.equal(new URL(reader.labelScanReturnUrl(base,'tile','','','add')).searchParams.get('scanAction'),'add');assert.equal(new URL(reader.labelScanReturnUrl(base,'vinyl','','','add')).searchParams.has('scanAction'),false);
 let failures=0;failures=reader.labelScanFailures(failures,'failed');assert.equal(failures,1);failures=reader.labelScanFailures(failures,'failed');assert.equal(failures,2);failures=reader.labelScanFailures(failures,'failed');assert.equal(failures,3);assert.equal(reader.labelScanFailures(failures,'failed'),3);assert.equal(reader.labelScanFailures(failures,'accepted'),0);
+assert.deepEqual(reader.labelPhotoTransform(100,200,1,0),{angle:Math.PI/2,width:200,height:100});assert.ok(reader.labelPhotoTransform(100,200,0,20).width>100);
 
 const source=fs.readFileSync((fs.existsSync('apps-script')?'apps-script/':'')+'AppJs.html','utf8'),state={token:'employee-session',category:'carpet',loadedCategories:{carpet:{},tile:{},vinyl:{}}},elements={searchInput:{value:''},scanBtn:{classList:{remove(){}},href:'',textContent:''}};let finish,filters=0,categoryCalls=0;
 let rollForms=0,tileForms=0;

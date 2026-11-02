@@ -63,4 +63,5 @@ function labelScanReturnUrl(base,category,query,thickness,action){
   return url.toString();
 }
 function labelScanFailures(count,outcome){return outcome==='accepted'?0:outcome==='failed'?Math.min(3,Math.max(0,Number(count)||0)+1):Math.max(0,Number(count)||0);}
-if(typeof module!=='undefined' && module.exports)module.exports={labelScanCategory,labelScanText,labelScanThickness,labelScanCandidates,labelScanReturnUrl,labelScanFailures};
+function labelPhotoTransform(width,height,turns,tilt){const angle=((Number(turns)||0)*90+(Number(tilt)||0))*Math.PI/180,cos=Math.abs(Math.cos(angle)),sin=Math.abs(Math.sin(angle));return {angle,width:Math.max(1,Math.ceil(width*cos+height*sin-1e-9)),height:Math.max(1,Math.ceil(width*sin+height*cos-1e-9))};}
+if(typeof module!=='undefined' && module.exports)module.exports={labelScanCategory,labelScanText,labelScanThickness,labelScanCandidates,labelScanReturnUrl,labelScanFailures,labelPhotoTransform};

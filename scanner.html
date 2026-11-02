@@ -23,7 +23,8 @@
       <div id="photoControls" class="hidden">
         <div class="actions"><button id="rotateLeft" type="button" class="btn secondary">↶ Rotate left</button><button id="rotateRight" type="button" class="btn secondary">↷ Rotate right</button></div>
         <p class="status">Drag a box around one label. Keep the product name and codes; leave out nearby labels.</p>
-        <details class="label-text"><summary>Adjust crop precisely</summary><div class="crop-fields"><label>Left (%)<input id="cropLeft" type="number" min="0" max="99" value="0"></label><label>Top (%)<input id="cropTop" type="number" min="0" max="99" value="0"></label><label>Right (%)<input id="cropRight" type="number" min="1" max="100" value="100"></label><label>Bottom (%)<input id="cropBottom" type="number" min="1" max="100" value="100"></label></div></details>
+        <label>Straighten text <output id="tiltValue">0°</output><input id="tiltAngle" type="range" min="-30" max="30" step="1" value="0" style="padding:0;accent-color:#173f3b"></label>
+        <details class="label-text"><summary>Adjust crop precisely</summary><div class="crop-fields"><label>Left (%)<input id="cropLeft" type="number" min="0" max="99" value="0"></label><label>Top (%)<input id="cropTop" type="number" min="0" max="99" value="0"></label><label>Right (%)<input id="cropRight" type="number" min="1" max="100" value="100"></label><label>Bottom (%)<input id="cropBottom" type="number" min="1" max="100" value="100"></label></div><label>Reading layout<select id="ocrMode"><option value="11">Whole label</option><option value="7">One line / code</option><option value="6">Printed table</option></select></label></details>
         <div class="actions"><button id="readPhoto" type="button" class="btn primary">Read label</button><button id="clearCrop" type="button" class="btn secondary">Use full photo</button></div>
       </div>
       <p id="status" class="status" role="status" aria-live="polite">Starting camera…</p>
@@ -49,10 +50,10 @@
       <div class="actions" style="margin-top:12px"><button id="useResult" class="btn primary">Search inventory</button><button id="scanAgain" class="btn secondary">Scan Again</button></div>
     </div>
   </div>
-  <script src="label-reader.js?v=20261102-3"></script>
+  <script src="label-reader.js?v=20261102-4"></script>
   <script>
-    let stream=null,ocrLoading=null,reading=false,cameraRequest=0;
-    let lastLabelText='',failedScans=0,awaitingReview=false,sourcePhoto=null,photoTurns=0,cropRect=null,photoRequest=0;
+    let stream=null,ocrLoading=null,reading=false,cameraRequest=0,ocrWorkerPromise=null;
+    let lastLabelText='',failedScans=0,awaitingReview=false,sourcePhoto=null,photoTurns=0,photoTilt=0,cropRect=null,photoRequest=0;
     const $=id=>document.getElementById(id);
     function currentCategory(){return labelScanCategory($('scanCategory').value);}
     function selectSearchText(value){
@@ -77,7 +78,7 @@
       const base=new URLSearchParams(location.search).get('returnUrl')||'https://shloimyusb.github.io/flair-inventory-app/app.html';
       document.querySelector('.back-link').href=labelScanReturnUrl(base,category,'','')||'app.html';
       showLabelSuggestions(lastLabelText);
-      failedScans=0;awaitingReview=!!$('codeInput').value;$('rejectResult').classList.toggle('hidden',!awaitingReview);updateScanFailures();
+      failedScans=0;awaitingReview=false;$('rejectResult').classList.add('hidden');updateScanFailures();
     }
     function updateScanFailures(){
       $('failureCount').textContent=failedScans+' unsuccessful scan'+(failedScans===1?'':'s')+' in a row';$('failureCount').classList.toggle('hidden',!failedScans);
@@ -93,12 +94,12 @@
       for(const [id,value] of [['cropLeft',cropRect.x],['cropTop',cropRect.y],['cropRight',cropRect.x+cropRect.w],['cropBottom',cropRect.y+cropRect.h]])$(id).value=Math.round(value*100);
     }
     function drawPhoto(){
-      if(!sourcePhoto)return;const c=$('canvas'),odd=photoTurns%2;c.width=odd?sourcePhoto.height:sourcePhoto.width;c.height=odd?sourcePhoto.width:sourcePhoto.height;
-      const context=c.getContext('2d');context.translate(c.width/2,c.height/2);context.rotate(photoTurns*Math.PI/2);context.drawImage(sourcePhoto,-sourcePhoto.width/2,-sourcePhoto.height/2);
+      if(!sourcePhoto)return;const c=$('canvas'),transform=labelPhotoTransform(sourcePhoto.width,sourcePhoto.height,photoTurns,photoTilt);c.width=transform.width;c.height=transform.height;
+      const context=c.getContext('2d');context.fillStyle='#fff';context.fillRect(0,0,c.width,c.height);context.translate(c.width/2,c.height/2);context.rotate(transform.angle);context.drawImage(sourcePhoto,-sourcePhoto.width/2,-sourcePhoto.height/2);
       $('video').classList.add('hidden');$('photoStage').classList.remove('hidden');$('photoControls').classList.remove('hidden');clearCrop();
     }
     function setPhotoSource(source,width,height){
-      const scale=Math.min(1,2000/Math.max(width,height)),c=document.createElement('canvas');c.width=Math.max(1,Math.round(width*scale));c.height=Math.max(1,Math.round(height*scale));c.getContext('2d').drawImage(source,0,0,c.width,c.height);sourcePhoto=c;photoTurns=0;drawPhoto();
+      const scale=Math.min(1,2000/Math.max(width,height)),c=document.createElement('canvas');c.width=Math.max(1,Math.round(width*scale));c.height=Math.max(1,Math.round(height*scale));c.getContext('2d').drawImage(source,0,0,c.width,c.height);sourcePhoto=c;photoTurns=0;photoTilt=0;$('tiltAngle').value=0;$('tiltValue').textContent='0°';drawPhoto();
     }
     async function uploadPhoto(file){
       const request=++photoRequest;stopCamera();const url=URL.createObjectURL(file),image=new Image();
@@ -127,21 +128,27 @@
       if(!ocrLoading)ocrLoading=new Promise((resolve,reject)=>{const script=document.createElement('script');script.src='https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js';script.onload=resolve;script.onerror=()=>{script.remove();ocrLoading=null;reject(new Error('Could not load label reader'));};document.head.appendChild(script);});
       return ocrLoading;
     }
+    async function getOcrWorker(){
+      await loadOcr();
+      if(!ocrWorkerPromise){const pending=Tesseract.createWorker('eng',1,{logger:m=>{if(reading&&m.status==='recognizing text')$('status').textContent='Reading label… '+Math.round((m.progress||0)*100)+'%';}}).catch(error=>{if(ocrWorkerPromise===pending)ocrWorkerPromise=null;throw error;});ocrWorkerPromise=pending;}
+      return ocrWorkerPromise;
+    }
+    function releaseOcrWorker(){const pending=ocrWorkerPromise;ocrWorkerPromise=null;if(pending)pending.then(worker=>worker.terminate()).catch(()=>{});}
     async function capture(){
       const v=$('video'),c=$('canvas'); if(!v.videoWidth){$('status').textContent='Camera is not ready yet.';return}
       setPhotoSource(v,v.videoWidth,v.videoHeight);stopCamera();await readCurrentPhoto();
     }
     async function readLabel(source){
-      if(reading)return;rejectCurrentRead();reading=true;lastLabelText='';showLabelSuggestions('');for(const id of ['capture','retry','scanAgain','photoInput','scanCategory','useResult','rotateLeft','rotateRight','readPhoto','clearCrop','manualAdd'])$(id).disabled=true;
+      if(reading)return;rejectCurrentRead();reading=true;lastLabelText='';showLabelSuggestions('');for(const id of ['capture','retry','scanAgain','photoInput','scanCategory','useResult','rotateLeft','rotateRight','readPhoto','clearCrop','manualAdd','tiltAngle','ocrMode'])$(id).disabled=true;
       $('status').textContent='Reading label…';
       try{
-        await loadOcr();
-        const r=await Tesseract.recognize(source,'eng',{logger:m=>{if(m.status==='recognizing text')$('status').textContent=`Reading label… ${Math.round((m.progress||0)*100)}%`}});
+        const worker=await getOcrWorker();await worker.setParameters({tessedit_pageseg_mode:$('ocrMode').value,preserve_interword_spaces:'1',user_defined_dpi:'300'});
+        const r=await worker.recognize(source);
         lastLabelText=String(r.data.text||'').slice(0,6000);showLabelSuggestions(lastLabelText);
         awaitingReview=!!$('codeInput').value;$('rejectResult').classList.toggle('hidden',!awaitingReview);if(!awaitingReview)failScan();
         $('resultCard').classList.remove('hidden');$('status').textContent=$('codeInput').value?'Check the result before searching inventory.':'No product text found. Enter a name or code below, or try another photo.';
-      }catch(e){failScan();$('status').textContent='Could not read the label. Try again with less glare or enter it manually.';$('resultCard').classList.remove('hidden')}
-      finally{reading=false;for(const id of ['retry','scanAgain','photoInput','scanCategory','useResult','rotateLeft','rotateRight','readPhoto','clearCrop','manualAdd'])$(id).disabled=false;$('capture').disabled=!stream;}
+      }catch(e){releaseOcrWorker();failScan();$('status').textContent='Could not read the label. Try again with less glare or enter it manually.';$('resultCard').classList.remove('hidden')}
+      finally{reading=false;for(const id of ['retry','scanAgain','photoInput','scanCategory','useResult','rotateLeft','rotateRight','readPhoto','clearCrop','manualAdd','tiltAngle','ocrMode'])$(id).disabled=false;$('capture').disabled=!stream;}
     }
     function sendResult(action){
       if(reading)return;
@@ -160,6 +167,7 @@
     $('codeInput').addEventListener('input',()=>{$('codeText').textContent=$('codeInput').value||'—';$('scanSuggestions').querySelectorAll('button').forEach(button=>button.setAttribute('aria-pressed',String(button.dataset.query===$('codeInput').value)));});
     $('photoInput').addEventListener('change',e=>{const file=e.target.files[0];if(file)uploadPhoto(file);});
     $('rotateLeft').addEventListener('click',()=>{photoTurns=(photoTurns+3)%4;drawPhoto();});$('rotateRight').addEventListener('click',()=>{photoTurns=(photoTurns+1)%4;drawPhoto();});$('readPhoto').addEventListener('click',readCurrentPhoto);$('clearCrop').addEventListener('click',clearCrop);
+    $('tiltAngle').addEventListener('input',()=>{$('tiltValue').textContent=$('tiltAngle').value+'°';});$('tiltAngle').addEventListener('change',()=>{photoTilt=Number($('tiltAngle').value);drawPhoto();});
     for(const id of ['cropLeft','cropTop','cropRight','cropBottom'])$(id).addEventListener('input',cropFromFields);
     let dragStart=null;
     const point=event=>{const rect=$('canvas').getBoundingClientRect();return{x:Math.max(0,Math.min(1,(event.clientX-rect.left)/rect.width)),y:Math.max(0,Math.min(1,(event.clientY-rect.top)/rect.height))};};
@@ -168,7 +176,7 @@
     for(const name of ['pointerup','pointercancel'])$('canvas').addEventListener(name,()=>{if(cropRect && (cropRect.w<.01||cropRect.h<.01))clearCrop();dragStart=null;});
     $('rejectResult').addEventListener('click',()=>{rejectCurrentRead();selectSearchText('');$('status').textContent='Try rotating or cropping the label, or enter the item manually.';});
     $('manualSearch').addEventListener('click',()=>{$('codeInput').scrollIntoView({block:'center'});$('codeInput').focus();});$('manualAdd').addEventListener('click',()=>sendResult('add'));
-    $('capture').addEventListener('click',capture);for(const id of ['retry','scanAgain'])$(id).addEventListener('click',()=>{rejectCurrentRead();showCameraView();startCamera();});$('useResult').addEventListener('click',()=>sendResult(''));window.addEventListener('pagehide',stopCamera);startCamera();
+    $('capture').addEventListener('click',capture);for(const id of ['retry','scanAgain'])$(id).addEventListener('click',()=>{rejectCurrentRead();showCameraView();startCamera();});$('useResult').addEventListener('click',()=>sendResult(''));window.addEventListener('pagehide',()=>{stopCamera();releaseOcrWorker();});startCamera();
   </script>
 </body>
 </html>
