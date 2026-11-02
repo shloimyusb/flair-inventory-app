@@ -1,12 +1,15 @@
 function getAppBootstrap(token) {
   const user = requireSession_(token, false);
-  const inventory = getInventory(token, 'carpet', '');
+  const inventory = getInventory_('carpet', '', false);
+  const carpetSheets = safeSheetNames_('carpet');
+  const tile = cachedInventory_('tile');
   return {
     user,
     inventory,
     categories: APP.CATEGORIES,
-    carpetSheets: safeSheetNames_('carpet'),
-    inventorySheets: {carpet:safeSheetNames_('carpet'),tile:safeSheetNames_('tile'),vinyl:safeSheetNames_('vinyl')},
+    carpetSheets,
+    inventorySheets: {carpet:carpetSheets,tile:safeSheetNames_('tile'),vinyl:safeSheetNames_('vinyl')},
+    preloadedInventory: tile ? {tile} : {},
     vinylConfigured: !!PropertiesService.getScriptProperties().getProperty('VINYL_SPREADSHEET_ID'),
     scannerUrl: PropertiesService.getScriptProperties().getProperty('SCANNER_URL') || '',
     appUrl: ScriptApp.getService().getUrl(),
@@ -18,7 +21,9 @@ function safeSheetNames_(category) {
   try {
     const raw = CacheService.getScriptCache().get('sheetNames:' + category);
     if (raw) {const info=JSON.parse(raw);if(info.spreadsheetId===getSpreadsheetId_(category))return info.names;}
-    return getInventorySheets_(category).map(s => s.getName());
+    const names = getInventorySheets_(category).map(s => s.getName());
+    try{CacheService.getScriptCache().put('sheetNames:'+category,JSON.stringify({spreadsheetId:getSpreadsheetId_(category),names}),APP.CACHE_SECONDS);}catch(e){}
+    return names;
   } catch (e) {
     return [];
   }
@@ -26,6 +31,11 @@ function safeSheetNames_(category) {
 
 function getInventory(token, category, query, forceRefresh) {
   requireSession_(token, false);
+  return getInventory_(category, query, forceRefresh);
+}
+
+// Internal reads reuse the caller's session check; public entry points always authenticate.
+function getInventory_(category, query, forceRefresh) {
   category = String(category || '').toLowerCase();
   if (!APP.CATEGORIES.includes(category)) throw new Error('Invalid inventory category.');
 
@@ -266,7 +276,13 @@ function adjustInventory_(token, payload) {
   });
 
   CacheService.getScriptCache().remove(`inventory:${category}`);
-  return { ok: true, before: beforeDisplay, after: afterDisplay };
+  return { ok: true, before: beforeDisplay, after: afterDisplay, item: readUpdatedItem_(category,sheet,rowNumber,map) };
+}
+
+function readUpdatedItem_(category,sheet,rowNumber,map) {
+  const range=sheet.getRange(rowNumber,1,1,sheet.getLastColumn());
+  const display=range.getDisplayValues()[0];
+  return normalizeRow_(category,sheet.getName(),rowNumber,category==='carpet'?display:range.getValues()[0],display,map);
 }
 
 function addCarpetRoll(token, data) {
@@ -338,27 +354,34 @@ function addCarpetRoll_(token, data) {
   });
 
   CacheService.getScriptCache().remove('inventory:carpet');
-  return { ok: true, id, name, rowNumber, sheetName };
+  return { ok: true, id, name, rowNumber, sheetName, item: readUpdatedItem_('carpet',sheet,rowNumber,map) };
 }
 
 function getHistory(token, limit) {
   requireSession_(token, false);
-  limit = Math.min(Math.max(Number(limit) || 100, 1), 500);
+  limit = Math.min(Math.max(Math.floor(Number(limit) || 100), 1), 500);
   const rows = [];
   APP.CATEGORIES.forEach(category => {
     try {
       const ss = getSpreadsheet_(category);
       const sheet = ss.getSheetByName(APP.HISTORY_SHEET);
       if (!sheet || sheet.getLastRow() < 2) return;
-      const values = sheet.getRange(2, 1, sheet.getLastRow() - 1, sheet.getLastColumn()).getDisplayValues();
-      values.forEach(r => rows.push({
+      // Only the most recent N rows per workbook can enter the combined N-row result.
+      const count=Math.min(limit,sheet.getLastRow()-1);
+      const range=sheet.getRange(sheet.getLastRow()-count+1,1,count,14);
+      const values=range.getDisplayValues(),raw=range.getValues();
+      values.forEach((r,i) => rows.push({
         timestamp: r[0], category: r[1], inventoryId: r[2], product: r[3], action: r[4],
         amount: r[5], unit: r[6], before: r[7], after: r[8], employee: r[9], email: r[10],
         reason: r[11], notes: r[12], sourceSheet: r[13],
+        sortTime: new Date(raw[i][0]).getTime() || 0,
       }));
-    } catch (e) {}
+    } catch (e) {
+      if(category==='vinyl' && !PropertiesService.getScriptProperties().getProperty('VINYL_SPREADSHEET_ID'))return;
+      throw new Error('Could not read '+category+' history. Try Refresh.');
+    }
   });
-  return rows.sort((a, b) => String(b.timestamp).localeCompare(String(a.timestamp))).slice(0, limit);
+  return rows.sort((a,b)=>b.sortTime-a.sortTime).slice(0,limit).map(({sortTime,...row})=>row);
 }
 
 function findRecordById_(category, inventoryId) {
@@ -463,3 +486,4 @@ function literalValue_(value) {
 function trimNumber_(n) {
   return Number.isInteger(Number(n)) ? String(Number(n)) : String(rounded_(Number(n), 2));
 }
+

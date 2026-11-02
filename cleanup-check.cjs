@@ -1,0 +1,25 @@
+const fs=require('fs'),vm=require('vm'),assert=require('assert/strict');
+const root=fs.existsSync('apps-script')?'apps-script':'.';
+const entries=new Map(),ranges=[];let opens=0,authChecks=0;
+const cache={get:k=>entries.get(k)||null,put:(k,v)=>entries.set(k,v)};
+const ctx=vm.createContext({console,Date,CacheService:{getScriptCache:()=>cache},PropertiesService:{getScriptProperties:()=>({getProperty:k=>k==='VINYL_SPREADSHEET_ID'?null:'test-copy'})},SpreadsheetApp:{openById:id=>{opens++;return {id};}}});
+for(const f of ['Config.gs','Inventory.gs'])vm.runInContext(fs.readFileSync(root+'/'+f,'utf8'),ctx);
+ctx.getSpreadsheet_('carpet');ctx.getSpreadsheet_('carpet');assert.equal(opens,1,'Same request must reuse its workbook handle');
+ctx.requireSession_=()=>{authChecks++;return {email:'employee@example.invalid'};};
+ctx.getInventory_=()=>[{id:'CAR-1',quantityDisplay:'E-95'}];ctx.safeSheetNames_=()=>['Bay 1'];ctx.cachedInventory_=category=>category==='tile'?[{id:'TILE-1'}]:null;ctx.ScriptApp={getService:()=>({getUrl:()=> 'https://example.invalid/app'})};
+const bootstrap=ctx.getAppBootstrap('session');assert.equal(authChecks,1);assert.equal(bootstrap.preloadedInventory.tile[0].id,'TILE-1');
+ctx.getSpreadsheet_=category=>{if(category==='vinyl')throw Error('Unconfigured');return {getSheetByName:()=>({getLastRow:()=>10001,getRange:(row,col,count,width)=>{ranges.push({row,col,count,width});const records=Array.from({length:count},(_,i)=>[new Date(Date.UTC(2026,category==='tile'?10:9,1,0,0,i)),category,'ID','Product']);return {getValues:()=>records,getDisplayValues:()=>records.map(r=>r.map(String))};}})};};
+const history=ctx.getHistory('session',20);assert.equal(history.length,20);assert.equal(ranges.length,2);assert.ok(ranges.every(r=>r.count===20 && r.row===9982 && r.width===14));assert.equal(history[0].category,'tile','Sort by actual dates across month boundaries');assert.equal('sortTime' in history[0],false);
+ctx.getSpreadsheet_=()=>{throw Error('Read failed');};assert.throws(()=>ctx.getHistory('session',20),/Could not read carpet history/,'Do not silently return incomplete history');
+
+const source=fs.readFileSync(root+'/AppJs.html','utf8'),state={category:'carpet',token:'first',user:{email:'employee@example.invalid'},categoryRevisions:{},loadedCategories:{carpet:{items:[{id:'CAR-1',quantityDisplay:'E-95'}]}},allInventory:[{id:'CAR-1',quantityDisplay:'E-95'}],visibleCount:120,historyCache:{},historyRevision:0};
+let renders=0,remoteReads=0;const elements={historyList:{innerHTML:''},historyRefreshBtn:{}};
+const ui=vm.createContext({state,Date,Promise,console,$:id=>elements[id],populateBayFilter(){},applyInventoryFilters(){state.visibleCount=60;},renderInventory(){renders++;},loadInventory(){remoteReads++;},esc:v=>String(v??''),setBusy(){},toast(){}});
+vm.runInContext(source.slice(source.indexOf('function invalidateHistory('),source.indexOf('function openScanner(')),ui);
+ui.applyInventoryUpdate('carpet',{id:'CAR-1',quantityDisplay:'E-75'});assert.equal(state.allInventory[0].quantityDisplay,'E-75');assert.equal(state.loadedCategories.carpet.items[0].quantityDisplay,'E-75');assert.equal(remoteReads,0);assert.equal(state.visibleCount,120);assert.equal(state.historyCache,null);assert.equal(state.categoryRevisions.carpet,1);
+ui.applyInventoryUpdate('carpet',{id:'CAR-2',quantityDisplay:'E-10'});assert.equal(state.allInventory.length,2,'New roll appears without a category reload');
+let resolveHistory,calls=0;ui.call=()=>{calls++;return new Promise(resolve=>resolveHistory=resolve);};
+(async()=>{const one=ui.loadHistory(),two=ui.loadHistory();assert.equal(calls,1,'Repeated History visits share an in-flight request');resolveHistory([{product:'Recent',timestamp:'Today'}]);await Promise.all([one,two]);await ui.loadHistory();assert.equal(calls,1,'Fresh history reuses the session cache');
+const late=ui.loadHistory(true);state.token='different-user';elements.historyList.innerHTML='cleared';resolveHistory([{product:'Previous user data'}]);await late;assert.equal(elements.historyList.innerHTML,'cleared','Late history cannot render after sign-out');
+console.log('Cleanup checks passed: one bootstrap auth check, reused workbook handles, warm tile payload, bounded chronological history, explicit read errors, mutation updates without full reads, pagination retention, history deduplication and session isolation.');})().catch(error=>{console.error(error);process.exitCode=1;});
+

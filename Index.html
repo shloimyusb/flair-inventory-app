@@ -1,13 +1,13 @@
 <!doctype html>
-<html>
+<html lang="en">
 <head>
   <base target="_top">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#111827">
+  <meta name="theme-color" content="#173f3b">
   <?!= include_('Styles'); ?>
 </head>
 <body>
-  <div id="toast" class="toast hidden"></div>
+  <div id="toast" class="toast hidden" role="status" aria-live="polite" aria-atomic="true"></div>
   <input type="hidden" id="initialScanCode" value="<?= initialScanCode ?>">
   <input type="hidden" id="initialScanThickness" value="<?= initialScanThickness ?>">
   <input type="hidden" id="initialLoginHostNonce" value="<?= initialLoginHostNonce ?>">
@@ -15,14 +15,15 @@
   <main id="loginView" class="login-shell">
     <section class="login-card">
       <div class="brand-mark">F</div>
-      <h1>Flair Flooring Inventory</h1>
-      <p>Sign in to view and adjust warehouse inventory.</p>
-      <p id="restoreStatus" class="hidden" role="status">Restoring your saved login…</p>
+      <p class="eyebrow">FLAIR FLOORING</p>
+      <h1>Your warehouse,<br>at a glance.</h1>
+      <p>Sign in to find stock, update quantities, and keep every bay in order.</p>
+      <p id="restoreStatus" role="status">Connecting to your warehouse…</p>
       <p id="savedLoginNotice" class="hidden" role="status"></p>
       <button id="retrySavedLoginBtn" type="button" class="btn secondary hidden">Retry saved sign-in</button>
       <p id="stableLoginLink"><a href="https://shloimyusb.github.io/flair-inventory-app/app.html" target="_top">Open the app with reliable saved sign-in on iPhone</a></p>
-      <form id="loginForm" class="stack">
-        <label>Email<input id="loginEmail" type="email" autocomplete="email" required></label>
+      <form id="loginForm" class="stack hidden">
+        <label>Email<input id="loginEmail" type="email" autocomplete="username" autocapitalize="none" spellcheck="false" placeholder="you@example.com" required></label>
         <label>PIN<input id="loginPin" type="password" inputmode="numeric" autocomplete="current-password" required></label>
         <label class="check"><input id="rememberMe" type="checkbox">Remember me for 30 days</label>
         <button class="btn primary" type="submit">Sign in</button>
@@ -32,20 +33,21 @@
 
   <div id="appView" class="app hidden">
     <header class="topbar">
-      <div><strong>Flair Flooring</strong><span>Inventory</span></div>
+      <div class="brand"><span class="brand-mark" aria-hidden="true">F</span><div><strong>Flair Flooring</strong><span>Warehouse inventory</span></div></div>
       <div class="topbar-actions"><span id="userName"></span><button id="logoutBtn" class="btn ghost small">Sign out</button></div>
     </header>
-    <div id="testBanner" class="hidden" style="padding:12px 20px;background:#fff3cd;color:#664d03;font-weight:700">TEST MODE — changes affect workbook copies only.</div>
-    <div id="sessionSaveNotice" class="hidden" role="status" style="padding:12px 20px;background:#fff3cd;color:#664d03">This browser could not save your sign-in. Keep this tab open, or use the saved-sign-in app link.</div>
+    <div id="testBanner" class="environment-notice hidden"><span class="notice-dot" aria-hidden="true"></span><strong>Test workspace</strong><span>Changes affect workbook copies only.</span></div>
+    <div id="sessionSaveNotice" class="environment-notice hidden" role="status">This browser could not save your sign-in. Keep this tab open, or use the saved-sign-in app link.</div>
 
-    <nav class="nav">
+    <nav class="nav" aria-label="Main navigation">
       <button class="nav-btn active" data-view="inventory">Inventory</button>
       <button class="nav-btn" data-view="history">History</button>
     </nav>
 
     <section id="inventoryView" class="page">
+      <div class="page-intro"><div><p class="eyebrow">WAREHOUSE</p><h1>Inventory</h1><p class="page-description">Everything in its place.</p></div><span class="workspace-label">Sheets connected <span aria-hidden="true">↗</span></span></div>
       <div class="toolbar">
-        <div class="category-tabs">
+        <div class="category-tabs" role="group" aria-label="Inventory category">
           <button class="category-btn active" data-category="carpet">Carpet</button>
           <button class="category-btn" data-category="tile">Tile</button>
           <button class="category-btn" data-category="vinyl">Vinyl</button>
@@ -56,6 +58,13 @@
         </div>
       </div>
 
+      <div class="inventory-controls">
+      <div class="search-row">
+        <label class="search-field"><svg aria-hidden="true" width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 4 4"/></svg><input id="searchInput" type="search" aria-label="Search inventory" placeholder="Search name, SKU, bay, location…" autocomplete="off"></label>
+        <button id="refreshBtn" class="btn ghost" title="Read current quantities directly from Google Sheets">Refresh</button>
+      </div>
+      <details id="displayOptions" class="display-options" open>
+      <summary>Filters &amp; display <span>Bay, location, sort &amp; card size</span></summary>
       <div class="filter-row">
         <label class="bay-filter">Bay<select id="bayFilter"><option value="">All bays</option></select></label>
         <label>Location<select id="locationFilter"><option value="">All locations</option></select></label>
@@ -66,17 +75,15 @@
         <label for="cardSize">Card size <output id="cardSizeValue" for="cardSize">Standard</output></label>
         <div class="card-size-range"><span>Smaller</span><input id="cardSize" type="range" min="140" max="440" step="5" value="285"><span>Larger</span></div>
       </div>
-      <div class="search-row">
-        <input id="searchInput" type="search" placeholder="Search name, SKU, bay, location…">
-        <button id="refreshBtn" class="btn ghost" title="Read current quantities directly from Google Sheets">Refresh</button>
+      </details>
       </div>
 
-      <div id="statusLine" class="status-line"></div>
-      <div id="inventoryGrid" class="inventory-grid"></div>
+      <div class="results-heading"><div id="statusLine" class="status-line" role="status" aria-live="polite"></div><span id="filterSummary" class="filter-summary"></span></div>
+      <div id="inventoryGrid" class="inventory-grid" aria-label="Inventory results"></div>
     </section>
 
     <section id="historyView" class="page hidden">
-      <div class="page-heading"><h2>Adjustment History</h2><button id="historyRefreshBtn" class="btn ghost">Refresh</button></div>
+      <div class="page-heading"><div><p class="eyebrow">ACTIVITY</p><h1>Adjustment history</h1><p class="page-description">A record of what changed, where, and by whom.</p></div><button id="historyRefreshBtn" class="btn ghost">Refresh</button></div>
       <div id="historyList" class="history-list"></div>
     </section>
   </div>
@@ -134,4 +141,5 @@
 
 </body>
 </html>
+
 

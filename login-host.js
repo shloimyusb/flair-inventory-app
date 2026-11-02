@@ -16,6 +16,8 @@ function hostStoreLogin(token,remember){
 }
 function hostCardSizeKey(email){return 'flairInventoryCardSize:'+String(email||'').trim().toLowerCase();}
 function hostCardSize(email){try{const size=Number(window.localStorage.getItem(hostCardSizeKey(email)));return Number.isFinite(size) && size>=140 && size<=440?Math.round(size/5)*5:285;}catch(error){return 285;}}
+function hostViewKey(email){return 'flairInventoryView:'+String(email||'').trim().toLowerCase();}
+function hostView(email){try{const view=window.localStorage.getItem(hostViewKey(email));return ['cards','compact','table'].includes(view)?view:'cards';}catch(error){return 'cards';}}
 function validLoginHostMessage(event,nonce,client){
   const data=event.data;
   return /^https:\/\/[a-z0-9-]+-script\.googleusercontent\.com$/.test(event.origin) &&
@@ -44,7 +46,11 @@ function startInventoryHost(){
       case 'clear':hostForgetLogin();break;
       case 'read-card-size':
         if(typeof data.email!=='string' || data.email.length>254)return;
-        reply.size=hostCardSize(data.email);break;
+        reply.size=hostCardSize(data.email);reply.view=hostView(data.email);break;
+      case 'write-view':
+        if(typeof data.email!=='string' || data.email.length>254 || !['cards','compact','table'].includes(data.view))return;
+        try{window.localStorage.setItem(hostViewKey(data.email),data.view);reply.saved=true;}catch(error){reply.saved=false;}
+        break;
       case 'write-card-size':
         if(typeof data.email!=='string' || data.email.length>254 || !Number.isInteger(data.size) || data.size<140 || data.size>440)return;
         try{window.localStorage.setItem(hostCardSizeKey(data.email),String(data.size));reply.saved=true;}catch(error){reply.saved=false;}
@@ -60,3 +66,4 @@ function startInventoryHost(){
   frame.hidden=false;frame.src=url.toString();
 }
 startInventoryHost();
+

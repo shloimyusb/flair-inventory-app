@@ -26,11 +26,11 @@ ctx.updateTimestamp_=()=>{};
 ctx.appendHistory_=(_category,entry)=>{history.push(entry);};
 ctx.findRecordById_=(category)=>{
   const headers=category==='carpet'?['Name of carpet','Total on hand']:['Name of Tile','Boxes','SF/Box','Total on hand'];
-  return {sheet:{getName:()=> 'TEST',getRange:(_r,c)=>({setValue:v=>{cells[c-1]=v;}})},rowNumber:2,
+  return {sheet:{getName:()=> 'TEST',getLastColumn:()=>cells.length,getRange:(_r,c)=>({setValue:v=>{cells[c-1]=v;},getDisplayValues:()=>[cells.map(String)],getValues:()=>[cells.slice()]})},rowNumber:2,
     map:ctx.makeHeaderMap_(headers),row:cells.slice(),displayRow:cells.map(String)};
 };
 cells=['TEST','E-95'];history=[];
-ctx.adjustInventory('employee',{category:'carpet',inventoryId:'TEST',action:'subtract',amount:20});
+const adjusted=ctx.adjustInventory('employee',{category:'carpet',inventoryId:'TEST',action:'subtract',amount:20});assert.equal(adjusted.item.quantityDisplay,'E-75');
 assert.equal(cells[1],'E-75');assert.equal(history[0].before,'E-95');assert.equal(history[0].after,'E-75');assert.equal(held,false);
 ctx.adjustInventory('employee',{category:'carpet',inventoryId:'TEST',action:'add',amount:10});assert.equal(cells[1],'E-85');
 assert.throws(()=>ctx.adjustInventory('employee',{category:'carpet',inventoryId:'TEST',action:'subtract',amount:1000}),/negative/);assert.equal(held,false);assert.equal(cells[1],'E-85');
@@ -40,4 +40,5 @@ assert.equal(cells[1],8);assert.equal(cells[3],100);assert.equal(history.length,
 assert.throws(()=>ctx.adjustInventory('employee',{category:'tile',inventoryId:'TEST',action:'add',amount:0.5}),/whole number/);
 assert.throws(()=>ctx.adjustInventory('view',{category:'tile',action:'add',amount:1}),/permission/);assert.equal(held,false);
 console.log('Isolated adjustment tests passed: E- preservation, tile box/SF writes, history, negative/fractional rejection, view-only rejection, lock release.');
+
 

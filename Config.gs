@@ -61,8 +61,11 @@ function getSpreadsheetId_(category) {
   return id;
 }
 
+// Execution-local handles avoid reopening the same workbook within one request.
+const spreadsheetHandles_ = Object.create(null);
 function getSpreadsheet_(category) {
-  return SpreadsheetApp.openById(getSpreadsheetId_(category));
+  const id=getSpreadsheetId_(category);
+  return spreadsheetHandles_[id] || (spreadsheetHandles_[id]=SpreadsheetApp.openById(id));
 }
 
 function isInventorySheet_(sheet, category) {
@@ -115,3 +118,4 @@ function rounded_(n, places) {
   const p = Math.pow(10, places || 2);
   return Math.round((Number(n) + Number.EPSILON) * p) / p;
 }
+

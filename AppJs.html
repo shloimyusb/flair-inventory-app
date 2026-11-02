@@ -20,9 +20,15 @@ const state = {
   adjustAction: 'add',
   scannerUrl: '',
   vinylConfigured: false,
+  historyCache: null,
+  historyPending: null,
+  historyRevision: 0,
+  adjustSaving: false,
+  rollSaving: false,
 };
 
 const $ = id => document.getElementById(id);
+const searchTextCache = new WeakMap();
 function readLoginToken(){
   return localLoginTokens()[0]||'';
 }
@@ -76,6 +82,7 @@ async function allowLoginFrame(){
 }
 async function restoreLogin(){
   $('retrySavedLoginBtn').classList.add('hidden');$('savedLoginNotice').classList.add('hidden');
+  $('restoreStatus').textContent='Restoring your saved login…';
   const tokens=await savedLoginTokens();if(!tokens.length){state.token='';return false;}
   $('loginForm').classList.add('hidden');$('restoreStatus').classList.remove('hidden');
   for(const token of tokens){
@@ -95,6 +102,7 @@ const call = (fn, ...args) => new Promise((resolve, reject) => {
 
 window.addEventListener('load', async () => {
   bindEvents();
+  if(window.matchMedia('(max-width:720px)').matches)$('displayOptions').open=false;
   window.addEventListener('message', handleScannerMessage);
   if(!await allowLoginFrame()){
     $('loginForm').classList.add('hidden');$('restoreStatus').textContent='Open Flair Inventory directly to sign in.';$('restoreStatus').classList.remove('hidden');return;
@@ -110,7 +118,7 @@ function bindEvents(){
   $('logoutBtn').addEventListener('click', logout);
   document.querySelectorAll('.nav-btn').forEach(b=>b.addEventListener('click',()=>switchView(b.dataset.view)));
   document.querySelectorAll('.category-btn').forEach(b=>b.addEventListener('click',()=>switchCategory(b.dataset.category)));
-  $('searchInput').addEventListener('input', applyInventoryFilters);
+  $('searchInput').addEventListener('input', debounce(applyInventoryFilters,80));
   $('bayFilter').addEventListener('change', applyInventoryFilters);
   $('locationFilter').addEventListener('change', applyInventoryFilters);
   $('sortOrder').addEventListener('change', applyInventoryFilters);
@@ -118,7 +126,8 @@ function bindEvents(){
   $('cardSize').addEventListener('input',()=>{state.cardSize=validCardSize($('cardSize').value);applyCardSize();});
   $('cardSize').addEventListener('change',saveCardSize);
   $('refreshBtn').addEventListener('click',()=>loadInventory(true));
-  $('historyRefreshBtn').addEventListener('click',loadHistory);
+  $('historyRefreshBtn').addEventListener('click',()=>loadHistory(true));
+  $('inventoryGrid').addEventListener('click',handleInventoryAction);
   $('addRollBtn').addEventListener('click',openRollDialog);
   $('saveRollBtn').addEventListener('click',saveRoll);
   document.querySelectorAll('.segment').forEach(b=>b.addEventListener('click',()=>setAdjustAction(b.dataset.action)));
@@ -144,12 +153,18 @@ async function login(e){
 async function bootstrap(){
   const data = await call('getAppBootstrap',state.token);
   state.loadedCategories={carpet:{items:data.inventory||[],loadedAt:Date.now()}};
+  for(const [category,items] of Object.entries(data.preloadedInventory||{}))if(['tile','vinyl'].includes(category) && Array.isArray(items))state.loadedCategories[category]={items,loadedAt:Date.now()};
   state.pendingCategories={};
   state.categoryRevisions={};
   state.user=data.user; state.carpetSheets=data.carpetSheets||[]; state.scannerUrl=data.scannerUrl||'';
   state.viewMode=readInventoryView(state.user.email);$('inventoryViewMode').value=state.viewMode;
   state.cardSize=readCardSize(state.user.email);
-  if(loginHostNonce()){const size=await loginHostRequest('read-card-size',{email:state.user.email});if(size && size.ok)state.cardSize=validCardSize(size.size);}
+  if(loginHostNonce()){
+    const preferences=await loginHostRequest('read-card-size',{email:state.user.email});
+    if(preferences && preferences.ok){state.cardSize=validCardSize(preferences.size);if(['cards','compact','table'].includes(preferences.view))state.viewMode=preferences.view;}
+  }
+  $('inventoryViewMode').value=state.viewMode;
+  state.historyCache=null;state.historyPending=null;state.historyRevision++;
   applyCardSize();
   state.inventorySheets=data.inventorySheets||{carpet:state.carpetSheets};
   state.vinylConfigured=!!data.vinylConfigured;
@@ -157,20 +172,28 @@ async function bootstrap(){
   if(state.scannerUrl){const url=new URL(state.scannerUrl);url.searchParams.set('returnUrl',loginHostNonce()?'https://shloimyusb.github.io/flair-inventory-app/app.html':data.appUrl);$('scanBtn').href=url.toString();}
   $('userName').textContent=state.user.name;
   $('loginView').classList.add('hidden'); $('appView').classList.remove('hidden');
+  switchView('inventory');
   populateRollSheets();
   const scan=[$('initialScanCode').value,$('initialScanThickness').value].filter(Boolean).join(' ');
   if(scan){switchCategory('vinyl');$('searchInput').value=scan;$('initialScanCode').value='';$('initialScanThickness').value='';}
   else {await switchCategory('carpet');}
   // Warm the other tabs while the employee is viewing the first category.
-  fetchInventoryCategory('tile',false).catch(()=>{});
-  if(state.vinylConfigured)fetchInventoryCategory('vinyl',false).catch(()=>{});
+  if(!state.loadedCategories.tile)fetchInventoryCategory('tile',false).catch(()=>{});
+  if(state.vinylConfigured && !state.loadedCategories.vinyl)fetchInventoryCategory('vinyl',false).catch(()=>{});
 }
 
 function showLogin(){ $('loginForm').classList.remove('hidden');$('restoreStatus').classList.add('hidden');$('loginView').classList.remove('hidden'); $('appView').classList.add('hidden'); }
-async function logout(){ try{await call('logoutUser',state.token)}catch(e){toast('Could not complete server sign-out. Your saved login has been cleared on this browser.',true);}await clearLoginToken();state.token='';state.user=null;state.loadedCategories={};state.pendingCategories={};state.allInventory=[];state.inventory=[];$('rememberMe').checked=false;showLogin(); }
+async function logout(){
+  const token=state.token;state.token='';state.user=null;state.inventoryRequest++;state.historyRevision++;
+  state.loadedCategories={};state.pendingCategories={};state.allInventory=[];state.inventory=[];state.historyCache=null;state.historyPending=null;
+  for(const id of ['adjustDialog','rollDialog','moveDialog'])$(id).close();
+  $('inventoryGrid').innerHTML='';$('historyList').innerHTML='';$('rememberMe').checked=false;
+  await clearLoginToken();showLogin();
+  try{await call('logoutUser',token)}catch(e){toast('Saved sign-in cleared here. Server sign-out could not connect; try signing out again when connected.',true);}
+}
 
 function switchView(view){
-  document.querySelectorAll('.nav-btn').forEach(b=>b.classList.toggle('active',b.dataset.view===view));
+  document.querySelectorAll('.nav-btn').forEach(b=>{b.classList.toggle('active',b.dataset.view===view);b.setAttribute('aria-pressed',String(b.dataset.view===view));});
   $('inventoryView').classList.toggle('hidden',view!=='inventory'); $('historyView').classList.toggle('hidden',view!=='history');
   if(view==='history') loadHistory();
 }
@@ -178,15 +201,15 @@ function switchView(view){
 function switchCategory(category){
   state.category=category; $('searchInput').value='';
   $('bayFilter').value='';$('locationFilter').value='';state.allInventory=[];
-  document.querySelectorAll('.category-btn').forEach(b=>b.classList.toggle('active',b.dataset.category===category));
-  $('addRollBtn').classList.toggle('hidden',category!=='carpet');
+  document.querySelectorAll('.category-btn').forEach(b=>{b.classList.toggle('active',b.dataset.category===category);b.setAttribute('aria-pressed',String(b.dataset.category===category));});
+  $('addRollBtn').classList.toggle('hidden',category!=='carpet' || state.user.role==='view');
   $('scanBtn').classList.toggle('hidden',category!=='vinyl');
   return loadInventory(false);
 }
 
 async function loadInventory(force){
   const requestId=++state.inventoryRequest,category=state.category;
-  if(category==='vinyl' && !state.vinylConfigured){state.inventory=[];state.allInventory=[];populateBayFilter();populateLocationFilter([]);$('bayFilter').disabled=true;$('locationFilter').disabled=true;$('statusLine').textContent='Vinyl sheet not connected yet.';$('inventoryGrid').innerHTML='<div class="card">Vinyl inventory will be available when its Google Sheet is connected. You can still test the label scanner.</div>';return}
+  if(category==='vinyl' && !state.vinylConfigured){state.inventory=[];state.allInventory=[];populateBayFilter();populateLocationFilter([]);$('bayFilter').disabled=true;$('locationFilter').disabled=true;$('statusLine').textContent='Vinyl sheet not connected yet.';$('filterSummary').textContent='';$('inventoryGrid').innerHTML='<div class="card empty-state"><span class="empty-symbol" aria-hidden="true">◇</span><strong>Vinyl is ready for its sheet</strong><p>Vinyl inventory will be available when its Google Sheet is connected. You can still test the label scanner.</p></div>';return}
   const loaded=state.loadedCategories[category];
   if(loaded){
     state.allInventory=loaded.items;populateBayFilter();$('bayFilter').disabled=false;$('locationFilter').disabled=false;applyInventoryFilters();
@@ -194,7 +217,7 @@ async function loadInventory(force){
     $('statusLine').textContent+=force?' · Refreshing…':' · Checking for updates…';
   } else {
     state.inventory=[];state.allInventory=[];populateBayFilter();populateLocationFilter([]);$('bayFilter').disabled=true;$('locationFilter').disabled=true;
-    $('inventoryGrid').innerHTML='<div class="card">Loading '+esc(category)+' inventory…</div>';
+    $('inventoryGrid').innerHTML='<div class="card loading-card" role="status"><span class="muted">Loading '+esc(category)+' inventory…</span><span class="skeleton title"></span><span class="skeleton amount"></span><span class="skeleton block"></span></div>';
     $('statusLine').textContent='Loading…';
   }
   try{
@@ -227,8 +250,9 @@ function fetchInventoryCategory(category,force){
 
 function populateBayFilter(){
   const selected=$('bayFilter').value;
-  const bays=[...new Set(state.allInventory.map(item=>item.sourceSheet).filter(Boolean))].sort((a,b)=>a.localeCompare(b,undefined,{numeric:true,sensitivity:'base'}));
-  $('bayFilter').innerHTML='<option value="">All bays</option>'+bays.map(bay=>`<option value="${escAttr(bay)}">${esc(bay)} (${state.allInventory.filter(item=>item.sourceSheet===bay).length})</option>`).join('');
+  const counts=new Map();state.allInventory.forEach(item=>{if(item.sourceSheet)counts.set(item.sourceSheet,(counts.get(item.sourceSheet)||0)+1);});
+  const bays=[...counts.keys()].sort((a,b)=>a.localeCompare(b,undefined,{numeric:true,sensitivity:'base'}));
+  $('bayFilter').innerHTML='<option value="">All bays</option>'+bays.map(bay=>`<option value="${escAttr(bay)}">${esc(bay)} (${counts.get(bay)})</option>`).join('');
   $('bayFilter').value=bays.includes(selected)?selected:'';
 }
 
@@ -238,18 +262,25 @@ function applyInventoryFilters(){
   const bayItems=state.allInventory.filter(item=>!bay || item.sourceSheet===bay);
   populateLocationFilter(bayItems);
   const location=$('locationFilter').value;
-  state.inventory=bayItems.filter(item=>(!location || locationKey(item)===location) && terms.every(term=>JSON.stringify(item).toLowerCase().includes(term)));
-  state.inventory.sort((a,b)=>compareInventoryItems(a,b,$('sortOrder').value));
+  state.inventory=bayItems.filter(item=>(!location || locationKey(item)===location) && terms.every(term=>inventorySearchText(item).includes(term)));
+  const sort=$('sortOrder').value;state.inventory.sort((a,b)=>compareInventoryItems(a,b,sort));
   state.visibleCount=60;
   renderInventory();
   $('statusLine').textContent=`${state.inventory.length} of ${state.allInventory.length} ${state.category} item${state.inventory.length===1?'':'s'}${bay?' · '+bay:''}${location?' · Location '+(location==='__NO_LOCATION__'?'not set':location):''}`;
+  $('filterSummary').textContent=[bay,location==='__NO_LOCATION__'?'No location':location,terms.length?'Search active':''].filter(Boolean).join(' · ');
+}
+
+function inventorySearchText(item){
+  if(!searchTextCache.has(item))searchTextCache.set(item,JSON.stringify(item).toLowerCase());
+  return searchTextCache.get(item);
 }
 
 function locationKey(item){return String(item.location||'').trim() || '__NO_LOCATION__';}
 function populateLocationFilter(items){
   const selected=$('locationFilter').value;
-  const locations=[...new Set(items.map(locationKey))].sort((a,b)=>a==='__NO_LOCATION__'?1:b==='__NO_LOCATION__'?-1:a.localeCompare(b,undefined,{numeric:true,sensitivity:'base'}));
-  $('locationFilter').innerHTML='<option value="">All locations</option>'+locations.map(location=>`<option value="${escAttr(location)}">${location==='__NO_LOCATION__'?'Not set':esc(location)} (${items.filter(item=>locationKey(item)===location).length})</option>`).join('');
+  const counts=new Map();items.forEach(item=>{const key=locationKey(item);counts.set(key,(counts.get(key)||0)+1);});
+  const locations=[...counts.keys()].sort((a,b)=>a==='__NO_LOCATION__'?1:b==='__NO_LOCATION__'?-1:a.localeCompare(b,undefined,{numeric:true,sensitivity:'base'}));
+  $('locationFilter').innerHTML='<option value="">All locations</option>'+locations.map(location=>`<option value="${escAttr(location)}">${location==='__NO_LOCATION__'?'Not set':esc(location)} (${counts.get(location)})</option>`).join('');
   $('locationFilter').value=locations.includes(selected)?selected:'';
 }
 function compareInventoryItems(a,b,mode){
@@ -285,7 +316,7 @@ function applyCardSize(){
   const grid=$('inventoryGrid'),size=validCardSize(state.cardSize),small=size<=220,wasSmall=grid.classList.contains('cards-small');
   $('cardSizeControl').classList.toggle('hidden',state.viewMode!=='cards');
   $('cardSize').value=size;
-  $('cardSizeValue').textContent=size<220?'Small':size>340?'Large':'Standard';
+  $('cardSizeValue').textContent=size<=220?'Small':size>340?'Large':'Standard';
   grid.style.setProperty('--card-width',size+'px');
   grid.style.setProperty('--card-padding',Math.max(9,Math.min(22,Math.round(size/285*16)))+'px');
   grid.style.setProperty('--card-title-size',Math.max(12,Math.min(20,Math.round(size/285*17)))+'px');
@@ -300,6 +331,7 @@ function setInventoryView(value){
   state.viewMode=['cards','compact','table'].includes(value)?value:'cards';
   $('inventoryViewMode').value=state.viewMode;
   try {window.localStorage.setItem(inventoryViewKey(state.user.email),state.viewMode);}catch(error){}
+  if(loginHostNonce())loginHostRequest('write-view',{email:state.user.email,view:state.viewMode});
   if(state.loadedCategories[state.category])renderInventory();
 }
 
@@ -322,10 +354,15 @@ function inventoryActions(item){
   if(state.user.role==='view')return '<span class="muted">View only</span>';
   return `<div class="card-actions"><button type="button" class="btn secondary" data-adjust="add">+ Add</button><button type="button" class="btn ghost" data-adjust="subtract">− Subtract</button></div>${item.category==='carpet'?`<button type="button" class="btn ghost confirm-action" data-confirm>${String(item.confirmed).toLowerCase()==='true'?'✓ Confirm again':'✓ Confirm carpet'}</button>`:''}`;
 }
-function bindInventoryItem(element,item){
-  element.querySelectorAll('[data-move]').forEach(b=>b.addEventListener('click',()=>openMove(item,b.dataset.move)));
-  element.querySelectorAll('[data-adjust]').forEach(b=>b.addEventListener('click',()=>openAdjust(item,b.dataset.adjust)));
-  const confirm=element.querySelector('[data-confirm]');if(confirm)confirm.addEventListener('click',()=>saveCarpetConfirmation(item,confirm));
+function handleInventoryAction(event){
+  const button=event.target.closest('[data-move],[data-adjust],[data-confirm]');
+  if(!button || button.disabled)return;
+  const container=button.closest('[data-item-id]');
+  const item=container && state.inventory.find(row=>row.id===container.dataset.itemId);
+  if(!item)return;
+  if(button.hasAttribute('data-move'))openMove(item,button.dataset.move);
+  else if(button.hasAttribute('data-adjust'))openAdjust(item,button.dataset.adjust);
+  else saveCarpetConfirmation(item,button);
 }
 function renderInventoryTable(grid){
   const wrap=document.createElement('div');wrap.className='inventory-table-wrap';wrap.tabIndex=0;wrap.setAttribute('aria-label','Scrollable inventory table');
@@ -335,7 +372,7 @@ function renderInventoryTable(grid){
     const row=document.createElement('tr'),{qty,sub}=inventoryQuantity(item);
     const details=inventoryMeta(item).filter(m=>!['Location','Bay','Right / Left'].includes(m[0]));
     row.innerHTML=`<th scope="row">${esc(item.name)}${item.estimated?'<span class="badge warn">Estimated</span>':''}</th><td><div class="table-qty">${qty}</div>${sub?`<div class="table-sub">${esc(sub)}</div>`:''}</td><td class="table-place">${inventoryMetaField(item,'Bay',item.sourceSheet||'Not set')}</td><td class="table-place">${inventoryMetaField(item,'Location',item.location||'Not set')}</td>${item.category==='tile'?`<td class="table-place">${inventoryMetaField(item,'Right / Left',item.side||'Not set')}</td>`:''}<td>${details.length?`<details><summary>Details</summary><div class="meta">${details.map(m=>inventoryMetaField(item,...m)).join('')}</div></details>`:'—'}</td><td class="table-actions">${inventoryActions(item)}</td>`;
-    bindInventoryItem(row,item);body.appendChild(row);
+    row.dataset.itemId=item.id;body.appendChild(row);
   });
   const hint=document.createElement('p');hint.className='table-scroll-hint';hint.textContent='Swipe sideways to see all columns.';grid.append(hint,wrap);
 }
@@ -343,7 +380,8 @@ function renderInventoryTable(grid){
 function renderInventory(){
   const grid=$('inventoryGrid'); grid.className='inventory-grid inventory-'+state.viewMode;grid.innerHTML='';
   applyCardSize();
-  if(!state.inventory.length){grid.innerHTML='<div class="card"><strong>No inventory found.</strong></div>';return}
+  if(!state.inventory.length){grid.innerHTML='<div class="card empty-state"><span class="empty-symbol" aria-hidden="true">⌕</span><strong>No matching items</strong><p>Try another name, bay, or location.</p></div>';return}
+  const fragment=document.createDocumentFragment();
   if(state.viewMode==='table')renderInventoryTable(grid);
   else state.inventory.slice(0,state.visibleCount).forEach(item=>{
     const card=document.createElement('article'); card.className='card';
@@ -353,9 +391,10 @@ function renderInventory(){
     const primary=meta.filter(m=>['Location','Bay','Right / Left'].includes(m[0])),extra=meta.filter(m=>!['Location','Bay','Right / Left'].includes(m[0]));
     const metaHtml=state.viewMode==='cards'?`<div class="meta">${primary.map(m=>inventoryMetaField(item,...m)).join('')}</div>${extra.length?`<details class="card-extra" ${state.cardSize>220?'open':''}><summary>Details</summary><div class="meta">${extra.map(m=>inventoryMetaField(item,...m)).join('')}</div></details>`:''}`:`<div class="meta">${meta.map(m=>inventoryMetaField(item,...m)).join('')}</div>`;
     card.innerHTML=`<div class="card-title"><h3>${esc(item.name)}</h3>${est}</div><div class="qty">${qty}</div>${sub?`<div class="subqty">${esc(sub)}</div>`:''}${metaHtml}<div class="inventory-actions">${inventoryActions(item)}</div>`;
-    bindInventoryItem(card,item);
-    grid.appendChild(card);
+    card.dataset.itemId=item.id;
+    fragment.appendChild(card);
   });
+  grid.appendChild(fragment);
   if(state.inventory.length>state.visibleCount){
     const more=document.createElement('div');more.style.gridColumn='1 / -1';more.className='card inventory-more';
     const info=document.createElement('span');info.textContent=`Showing ${state.visibleCount} of ${state.inventory.length} matching items. Search and filters include all items.`;
@@ -369,12 +408,7 @@ async function saveCarpetConfirmation(item,button){
   try {
     const result=await call('confirmCarpet',token,item.id);
     if(state.token!==token)return;
-    state.categoryRevisions.carpet=(state.categoryRevisions.carpet||0)+1;
-    const cached=state.loadedCategories.carpet;
-    if(cached){cached.items=cached.items.map(row=>row.id===item.id?result.item:row);}
-    if(state.category==='carpet'){
-      state.allInventory=state.allInventory.map(row=>row.id===item.id?result.item:row);applyInventoryFilters();
-    }
+    applyInventoryUpdate('carpet',result.item);
     toast('Carpet confirmed. Checkbox and sheet date updated.');
   } catch(error){toast(error.message,true);} finally {setBusy(button,false,label);}
 }
@@ -403,10 +437,7 @@ async function saveMove(event){
   try {
     const result=await call('moveInventory',token,payload);
     if(state.token!==token)return;
-    state.categoryRevisions[item.category]=(state.categoryRevisions[item.category]||0)+1;
-    const cached=state.loadedCategories[item.category];
-    if(cached)cached.items=cached.items.map(row=>row.id===item.id?result.item:row);
-    if(state.category===item.category){state.allInventory=state.allInventory.map(row=>row.id===item.id?result.item:row);populateBayFilter();applyInventoryFilters();}
+    applyInventoryUpdate(item.category,result.item);
     $('moveDialog').close();
     toast(result.unchanged?'Location is already up to date.':`Saved: ${result.item.sourceSheet} · Location ${result.item.location||'not set'}${item.category==='tile'?' · '+(result.item.side||'Right / Left not set'):''}.`);
   }catch(error){toast(error.message,true);}finally{state.moveSaving=false;setBusy(button,false,'Save location');}
@@ -414,6 +445,7 @@ async function saveMove(event){
 
 function openAdjust(item,action){
   if(state.user.role==='view'){toast('Your account is view-only.',true);return}
+  if(state.adjustSaving){toast('Your adjustment is still saving.');return;}
   state.adjustItem=item; setAdjustAction(action);
   $('adjustTitle').textContent=`Adjust ${item.name}`;
   $('adjustAmount').value=''; $('adjustReason').value=''; $('adjustNotes').value='';
@@ -424,33 +456,66 @@ function openAdjust(item,action){
 function setAdjustAction(action){state.adjustAction=action;document.querySelectorAll('.segment').forEach(b=>b.classList.toggle('active',b.dataset.action===action))}
 
 async function saveAdjustment(){
-  const btn=$('saveAdjustBtn'); const amount=Number($('adjustAmount').value);
-  if(!amount||amount<=0){toast('Enter a quantity greater than zero.',true);return}
+  if(state.adjustSaving || !$('adjustForm').reportValidity())return;
+  const btn=$('saveAdjustBtn'),item=state.adjustItem,token=state.token,amount=Number($('adjustAmount').value);
+  if(!Number.isFinite(amount)||amount<=0){toast('Enter a quantity greater than zero.',true);return}
+  state.adjustSaving=true;
   setBusy(btn,true,'Saving…');
   try{
-    const result=await call('adjustInventory',state.token,{category:state.adjustItem.category,inventoryId:state.adjustItem.id,action:state.adjustAction,amount,reason:$('adjustReason').value,notes:$('adjustNotes').value});
-    $('adjustDialog').close(); toast(`Updated from ${result.before} to ${result.after}.`); await loadInventory(true);
-  }catch(err){toast(err.message,true)}finally{setBusy(btn,false,'Save adjustment')}
+    const result=await call('adjustInventory',token,{category:item.category,inventoryId:item.id,action:state.adjustAction,amount,reason:$('adjustReason').value,notes:$('adjustNotes').value});
+    if(state.token!==token)return;
+    $('adjustDialog').close();toast(`Updated from ${result.before} to ${result.after}.`);
+    applyInventoryUpdate(item.category,result.item);
+  }catch(err){toast(err.message,true)}finally{state.adjustSaving=false;setBusy(btn,false,'Save adjustment')}
 }
 
 function populateRollSheets(){
   $('rollSheet').innerHTML=state.carpetSheets.map(s=>`<option value="${escAttr(s)}">${esc(s)}</option>`).join('');
 }
-function openRollDialog(){ if(state.user.role==='view'){toast('Your account is view-only.',true);return} $('rollForm').reset(); populateRollSheets(); $('rollDialog').showModal(); }
+function openRollDialog(){ if(state.user.role==='view'){toast('Your account is view-only.',true);return}if(state.rollSaving){toast('Your roll is still saving.');return;} $('rollForm').reset(); populateRollSheets(); $('rollDialog').showModal(); }
 async function saveRoll(){
-  const btn=$('saveRollBtn'); setBusy(btn,true,'Adding…');
+  if(state.rollSaving || !$('rollForm').reportValidity())return;
+  const btn=$('saveRollBtn'),token=state.token;state.rollSaving=true;setBusy(btn,true,'Adding…');
   try{
-    const result=await call('addCarpetRoll',state.token,{name:$('rollName').value,sheetName:$('rollSheet').value,location:$('rollLocation').value,bay:$('rollBay').value,originalQty:Number($('rollOriginal').value),currentQty:Number($('rollCurrent').value),estimated:$('rollEstimated').checked,price:$('rollPrice').value,sample:$('rollSample').value,reprice:$('rollReprice').value,photo:$('rollPhoto').value,confirmed:$('rollConfirmed').checked,notes:$('rollNotes').value});
-    $('rollDialog').close(); toast(`${result.name} added to ${result.sheetName}.`); await loadInventory(true);
-  }catch(err){toast(err.message,true)}finally{setBusy(btn,false,'Add roll')}
+    const result=await call('addCarpetRoll',token,{name:$('rollName').value,sheetName:$('rollSheet').value,location:$('rollLocation').value,bay:$('rollBay').value,originalQty:Number($('rollOriginal').value),currentQty:Number($('rollCurrent').value),estimated:$('rollEstimated').checked,price:$('rollPrice').value,sample:$('rollSample').value,reprice:$('rollReprice').value,photo:$('rollPhoto').value,confirmed:$('rollConfirmed').checked,notes:$('rollNotes').value});
+    if(state.token!==token)return;
+    $('rollDialog').close();toast(`${result.name} added to ${result.sheetName}.`);applyInventoryUpdate('carpet',result.item);
+  }catch(err){toast(err.message,true)}finally{state.rollSaving=false;setBusy(btn,false,'Add roll')}
 }
 
-async function loadHistory(){
-  $('historyList').innerHTML='<div class="history-row">Loading…</div>';
+function invalidateHistory(){state.historyCache=null;state.historyRevision++;}
+function applyInventoryUpdate(category,item){
+  invalidateHistory();
+  state.categoryRevisions[category]=(state.categoryRevisions[category]||0)+1;
+  if(!item){delete state.loadedCategories[category];if(state.category===category)loadInventory(true);return;}
+  const cached=state.loadedCategories[category];
+  if(cached){const found=cached.items.some(row=>row.id===item.id);cached.items=found?cached.items.map(row=>row.id===item.id?item:row):[...cached.items,item];}
+  if(state.category===category){
+    const found=state.allInventory.some(row=>row.id===item.id);
+    state.allInventory=found?state.allInventory.map(row=>row.id===item.id?item:row):[...state.allInventory,item];
+    const visible=state.visibleCount;populateBayFilter();applyInventoryFilters();
+    if(visible>state.visibleCount){state.visibleCount=visible;renderInventory();}
+  }
+}
+function renderHistory(rows){
+  $('historyList').innerHTML=rows.length?rows.map(r=>`<div class="history-row"><div><strong>${esc(r.product)}</strong><br><span class="muted">${esc(r.timestamp)} · ${esc(r.category)}</span></div><div><span class="history-action">${esc(r.action)}</span><br><span class="muted">${esc(r.amount)} ${esc(r.unit)}</span></div><div class="history-change">${esc(r.before)} <span class="muted">→</span> ${esc(r.after)}</div><div>${esc(r.employee)}</div><div>${esc(r.sourceSheet)}</div></div>`).join(''):'<div class="card empty-state"><strong>No adjustments yet</strong><p>Inventory changes will appear here.</p></div>';
+}
+async function loadHistory(force){
+  const token=state.token,revision=state.historyRevision,cache=state.historyCache;
+  if(cache){renderHistory(cache.rows);if(!force && Date.now()-cache.loadedAt<60000)return;}
+  else $('historyList').innerHTML='<div class="history-row" role="status">Loading recent activity…</div>';
+  setBusy($('historyRefreshBtn'),true,'Refreshing…');
   try{
-    const rows=await call('getHistory',state.token,200);
-    $('historyList').innerHTML=rows.length?rows.map(r=>`<div class="history-row"><div><strong>${esc(r.product)}</strong><br><span class="muted">${esc(r.timestamp)} · ${esc(r.category)}</span></div><div><b>${esc(r.action)}</b><br>${esc(r.amount)} ${esc(r.unit)}</div><div>${esc(r.before)} → ${esc(r.after)}</div><div>${esc(r.employee)}</div><div>${esc(r.sourceSheet)}</div></div>`).join(''):'<div class="history-row">No history yet.</div>';
-  }catch(err){toast(err.message,true)}
+    let job=state.historyPending;
+    if(!job || job.token!==token || job.revision!==revision){
+      job={token,revision,promise:call('getHistory',token,200)};state.historyPending=job;
+      job.promise.finally(()=>{if(state.historyPending===job)state.historyPending=null;}).catch(()=>{});
+    }
+    const rows=await job.promise;
+    if(state.token!==token || state.historyRevision!==revision)return;
+    state.historyCache={rows,loadedAt:Date.now()};renderHistory(rows);
+  }catch(err){if(state.token===token){if(!cache)$('historyList').innerHTML='<div class="card empty-state"><strong>Could not load activity</strong><p>Try Refresh to reconnect.</p></div>';toast(err.message,true);}}
+  finally{if(state.token===token)setBusy($('historyRefreshBtn'),false,'Refresh');}
 }
 
 function openScanner(event){
@@ -471,10 +536,11 @@ function handleScannerMessage(event){
 }
 
 function setBusy(btn,busy,label){if(!btn)return;btn.disabled=busy;btn.textContent=label}
-function toast(msg,error){const t=$('toast');t.textContent=msg;t.style.background=error?'#991b1b':'#111827';t.classList.remove('hidden');clearTimeout(t._timer);t._timer=setTimeout(()=>t.classList.add('hidden'),3200)}
+function toast(msg,error){const t=$('toast');t.textContent=msg;t.classList.toggle('error',!!error);t.setAttribute('role',error?'alert':'status');t.classList.remove('hidden');clearTimeout(t._timer);t._timer=setTimeout(()=>t.classList.add('hidden'),error?6500:3600)}
 function debounce(fn,ms){let id;return(...args)=>{clearTimeout(id);id=setTimeout(()=>fn(...args),ms)}}
 function fmt(v){return Number(v).toLocaleString(undefined,{maximumFractionDigits:2})}
 function esc(v){return String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
 function escAttr(v){return esc(v)}
 </script>
+
 

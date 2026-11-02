@@ -3,15 +3,16 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-  <meta name="theme-color" content="#111827">
+  <meta name="theme-color" content="#173f3b">
   <meta name="referrer" content="no-referrer">
   <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; frame-src https://script.google.com https://*.googleusercontent.com; base-uri 'none'; form-action 'none'">
   <title>Flair Flooring Inventory</title>
-  <style>html,body{margin:0;height:100%;background:#f3f4f6;color:#111827;font-family:system-ui,-apple-system,sans-serif}#inventoryFrame{display:block;width:100%;height:100vh;height:100dvh;border:0}#connectionStatus{position:fixed;inset:0;background:#f3f4f6;display:grid;place-content:center;text-align:center;gap:14px;padding:24px}#connectionStatus[hidden]{display:none}h1{font-size:24px;margin:0}p{max-width:380px;line-height:1.5;margin:0 auto}button,a{font:inherit}button{background:#111827;color:white;border:0;border-radius:10px;padding:12px 18px;cursor:pointer}a{color:#1d4ed8}</style>
+  <style>html,body{margin:0;height:100%;background:#f5f6f2;color:#22332f;font-family:system-ui,-apple-system,sans-serif}#inventoryFrame{display:block;width:100%;height:100vh;height:100dvh;border:0}#connectionStatus{position:fixed;inset:0;background:radial-gradient(ellipse at 20% 10%,#e8efe6,transparent 60%),#f5f6f2;display:grid;place-content:center;text-align:center;gap:16px;padding:24px}#connectionStatus[hidden]{display:none}.brand-mark{display:grid;place-items:center;width:56px;height:56px;border-radius:16px;background:#173f3b;color:#fff;font:36px Georgia,serif;margin:0 auto 8px}h1{font-size:25px;letter-spacing:-.04em;margin:0}p{max-width:340px;font-size:14px;color:#6a7772;line-height:1.6;margin:0 auto}button,a{font:inherit;font-size:13px}button{background:#173f3b;color:white;border:0;border-radius:10px;padding:13px 20px;cursor:pointer}a{color:#365e50}button:focus-visible,a:focus-visible{outline:3px solid #418e7d;outline-offset:3px}</style>
   <script src="login-host.js" defer></script>
 </head>
 <body>
-  <section id="connectionStatus" role="status"><h1>Flair Flooring Inventory</h1><p id="connectionMessage">Opening inventory…</p><button id="retryConnection" type="button" hidden>Try again</button><a id="directLink" href="https://script.google.com/macros/s/AKfycbzU4qdMk-f_v_8kUMvZzydexGX4hPLTCszIQiJSjQKIJZpsa-JITlQ6HRYPhEcO8A7mOQ/exec" target="_top" hidden>Open inventory directly</a></section>
+  <section id="connectionStatus" role="status"><div class="brand-mark" aria-hidden="true">F</div><h1>Flair Flooring Inventory</h1><p id="connectionMessage">Opening your warehouse…</p><button id="retryConnection" type="button" hidden>Try again</button><a id="directLink" href="https://script.google.com/macros/s/AKfycbzU4qdMk-f_v_8kUMvZzydexGX4hPLTCszIQiJSjQKIJZpsa-JITlQ6HRYPhEcO8A7mOQ/exec" target="_top" hidden>Open inventory directly</a></section>
   <iframe id="inventoryFrame" title="Flair Flooring Inventory app" credentialless referrerpolicy="no-referrer" hidden></iframe>
 </body>
 </html>
+

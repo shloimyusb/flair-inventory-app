@@ -3,7 +3,7 @@ const root=fs.existsSync('apps-script')?'apps-script':'.',js=fs.readFileSync(roo
 const storage=new Map(),elements={inventoryViewMode:{value:'cards'}},state={viewMode:'cards',category:'carpet',user:{email:'employee@example.invalid',role:'employee'},loadedCategories:{carpet:{items:[]}},visibleCount:120};
 let renders=0;
 const window={localStorage:{getItem:key=>storage.get(key)||null,setItem:(key,value)=>storage.set(key,value)}};
-const ctx=vm.createContext({state,window,$:id=>{assert.ok(elements[id],'view switching must not alter filters');return elements[id];},renderInventory:()=>renders++});
+const ctx=vm.createContext({state,window,loginHostNonce:()=>'',renderInventory:()=>renders++,$:id=>{assert.ok(elements[id],'view switching must not alter filters');return elements[id];}});
 vm.runInContext(js.slice(js.indexOf('function inventoryViewKey('),js.indexOf('function renderInventoryTable(')),ctx);
 vm.runInContext(js.slice(js.indexOf('function fmt('),js.indexOf('</script>')),ctx);
 assert.equal(ctx.readInventoryView('employee@example.invalid'),'cards');
@@ -24,3 +24,4 @@ assert.equal(ctx.inventoryQuantity({category:'tile',boxes:8,totalSf:100,sfPerBox
 state.user.role='employee';assert.ok(ctx.inventoryMetaField({name:'Tile'},'Right / Left','Left').includes('data-move="Right / Left"'));assert.ok(ctx.inventoryMeta({category:'tile'}).some(([label,value])=>label==='Right / Left' && value==='Not set'));
 state.user.role='view';assert.ok(!ctx.inventoryMetaField({name:'Tile'},'Right / Left','Left').includes('<button'));
 console.log('View checks passed: per-employee persistence, invalid/blocked storage fallback, local switching without filter/pagination resets, loading-state safety, E-values, tile SF, escaped labels and view-only controls.');
+
