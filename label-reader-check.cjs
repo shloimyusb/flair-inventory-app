@@ -9,10 +9,12 @@ assert.equal(candidates('Dublin Dundrum\n95 ft\nE-95','carpet')[0].value,'Dublin
 assert.equal(candidates('DALTILE\nSKU: BB1412241P\nProduct: Beaubridge Arctic White\nSize: 12x24','tile')[0].value,'BB1412241P');
 assert.equal(candidates('Item No. BB1412241P\n18.9 SF/Box','tile')[0].value,'BB1412241P');
 assert.equal(candidates('SKU101028686\nModel #B011 Weight Per Carton: 15.87lbs','tile')[0].value,'101028686');
+assert.equal(candidates('KU 101028686','tile')[0].value,'101028686');
 assert.equal(candidates('0190 4161P2\n0190-ARCTIC WHITE\nShade/Teinte 55501','tile')[0].value,'01904161P2');
 assert.equal(candidates('ES51 24241LF\nES51-GOLDEN CALACATTA','tile')[0].value,'ES5124241LF');
 assert.equal(candidates('STYLE COLOR BACK WIDTH LENGTH SQYD\nEF124 1956 ACTION 1200 150.00','carpet')[0].value,'EF124');
-assert.equal(candidates('SKU: E231/956/1200\nDAREDEVIL/BAYSIDE\nRoll Size: 12 x 150','carpet')[0].value,'DAREDEVIL/BAYSIDE');
+assert.equal(candidates('SKU: E231/956/1200\nDAREDEVIL/BAYSIDE\nRoll Size: 12 x 150','carpet')[0].value,'DAREDEVIL BAYSIDE');
+assert.ok(candidates('SKU: 1835/4935/1200','carpet').some(item=>item.value==='1835 4935'));
 assert.equal(candidates('Tile Name: Beaubridge Arctic White 12x24','tile')[0].value,'Beaubridge Arctic White 12 x 24');
 assert.equal(candidates('Tilematic Ceramic','tile')[0].value,'Tilematic Ceramic','Do not remove an apparent field prefix from an ordinary name');
 assert.equal(candidates('Style:\nSKU: BB1412241P','tile')[0].value,'BB1412241P');

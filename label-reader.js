@@ -9,6 +9,7 @@ function labelScanCandidates(text,category){
   const lines=String(text??'').slice(0,6000).split(/\r?\n/).map(labelScanText).filter(Boolean),found=new Map();
   const add=(value,label,rank)=>{
     value=labelScanText(value).replace(/^[\s:#=-]+|[\s,;]+$/g,'').split(/\s+(?=(?:SKU|Size|Color|Colour|Lot|Batch|Quantity|Qty)\s*[:#])/i)[0].slice(0,80).trim();
+    if(/name/i.test(label))value=value.replace(/([A-Z])\/+(?=[A-Z])/gi,'$1 ');
     if(!value || /^(?:N\/?A|none|not found|unknown|label|inventory|product|carpet|tile|vinyl)$/i.test(value))return;
     const key=value.toLowerCase(),previous=found.get(key);
     if(!previous || previous.rank<rank)found.set(key,{value,label,rank});
@@ -16,8 +17,8 @@ function labelScanCandidates(text,category){
   const nameField=/^(?:style(?:\s*(?:name|no\.?|number|#))?|product(?:\s*(?:name|description))?|carpet(?:\s*name)?|tile(?:\s*name)?|name|description|pattern)(?=\s|[:#=-]|$)\s*[:#=-]?\s*(.*)$/i;
   const codeField=/^(?:sku|item(?:\s*(?:no\.?|number|code|#))?|model(?:\s*(?:no\.?|number|#))?|product\s*code|style\s*code|code|roll(?:\s*(?:no\.?|number|id|#))?)(?=\s|[:#=-]|$)\s*[:#=-]?\s*(.*)$/i;
   lines.forEach((line,index)=>{
-    const sku=line.match(/^SKU\s*[:#=-]?\s*([A-Z0-9][A-Z0-9._\/-]{2,})/i);
-    if(sku)add(sku[1],'SKU',category==='carpet'?110:140);
+    const sku=line.match(/^(?:SKU\s*[:#=-]?\s*|KU\s*[:#=-]?\s+)([A-Z0-9][A-Z0-9._\/-]{2,})/i);
+    if(sku){add(sku[1],'SKU',category==='carpet'?110:140);const parts=sku[1].split('/');if(category==='carpet'&&parts.length>=2)add(parts[0]+' '+parts[1],'Style + color',118);}
     if(category==='tile'){
       const pair=line.match(/^((?:[A-Z]{1,3}\d{2,4}|\d{4}))\s+([A-Z]{0,4}\d{3,6}[A-Z][A-Z0-9]*)\b/i);
       if(pair){add(pair[1]+pair[2],'Color + shape code',125);add(pair[1],'Color code',80);add(pair[2],'Shape code',75);}
