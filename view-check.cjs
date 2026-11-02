@@ -21,7 +21,8 @@ assert.ok(ctx.inventoryMetaField(item,'Location','A').includes('data-move="Locat
 assert.ok(ctx.inventoryMetaField(item,'Location','A').includes('&lt;TEST&gt;'));assert.ok(ctx.inventoryActions(item).includes('data-confirm'));
 state.user.role='view';assert.ok(!ctx.inventoryMetaField(item,'Location','A').includes('<button'));assert.equal(ctx.inventoryActions(item),'<span class="muted">View only</span>');
 assert.equal(ctx.inventoryQuantity({category:'tile',boxes:8,totalSf:100,sfPerBox:12.5}).sub,'100 SF total · 12.5 SF/box');
+assert.equal(ctx.inventoryQuantity({category:'tile',boxes:1}).qty,'1 <small>box</small>');
+vm.runInContext(js.slice(js.indexOf('function compareInventoryItems('),js.indexOf('function inventoryViewKey(')),ctx);assert.ok(ctx.compareInventoryItems({name:' Alpha '},{name:'Beta'},'name-asc')<0);
 state.user.role='employee';assert.ok(ctx.inventoryMetaField({name:'Tile'},'Right / Left','Left').includes('data-move="Right / Left"'));assert.ok(ctx.inventoryMeta({category:'tile'}).some(([label,value])=>label==='Right / Left' && value==='Not set'));
 state.user.role='view';assert.ok(!ctx.inventoryMetaField({name:'Tile'},'Right / Left','Left').includes('<button'));
 console.log('View checks passed: per-employee persistence, invalid/blocked storage fallback, local switching without filter/pagination resets, loading-state safety, E-values, tile SF, escaped labels and view-only controls.');
-

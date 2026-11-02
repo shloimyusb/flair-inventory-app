@@ -34,15 +34,16 @@
     </div>
   </div>
   <script>
-    let stream=null,ocrLoading=null,reading=false;
+    let stream=null,ocrLoading=null,reading=false,cameraRequest=0;
     const $=id=>document.getElementById(id);
     async function startCamera(){
       if(reading)return;
       stopCamera(); $('status').textContent='Starting camera… You can also upload a photo or enter a code below.';
-      try{stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'}},audio:false});$('video').srcObject=stream;$('status').textContent='Camera ready.';$('capture').disabled=false;}
-      catch(e){$('status').textContent='Camera access was blocked. You can still enter the code and thickness manually.';$('resultCard').classList.remove('hidden')}
+      const request=cameraRequest;
+      try{const opened=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'}},audio:false});if(request!==cameraRequest || reading){opened.getTracks().forEach(t=>t.stop());return;}stream=opened;$('video').srcObject=stream;$('status').textContent='Camera ready.';$('capture').disabled=false;}
+      catch(e){if(request!==cameraRequest)return;$('status').textContent='Camera access was blocked. You can still enter the code and thickness manually.';$('resultCard').classList.remove('hidden')}
     }
-    function stopCamera(){if(stream){stream.getTracks().forEach(t=>t.stop());stream=null}$('capture').disabled=true;}
+    function stopCamera(){cameraRequest++;if(stream){stream.getTracks().forEach(t=>t.stop());stream=null}$('capture').disabled=true;}
     function loadOcr(){
       if(!ocrLoading)ocrLoading=new Promise((resolve,reject)=>{const script=document.createElement('script');script.src='https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js';script.onload=resolve;script.onerror=()=>{script.remove();ocrLoading=null;reject(new Error('Could not load label reader'));};document.head.appendChild(script);});
       return ocrLoading;
@@ -81,4 +82,3 @@
   </script>
 </body>
 </html>
-

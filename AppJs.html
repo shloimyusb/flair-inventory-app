@@ -267,7 +267,7 @@ function applyInventoryFilters(){
   const sort=$('sortOrder').value;state.inventory.sort((a,b)=>compareInventoryItems(a,b,sort));
   state.visibleCount=60;
   renderInventory();
-  $('statusLine').textContent=`${state.inventory.length} of ${state.allInventory.length} ${state.category} item${state.inventory.length===1?'':'s'}${bay?' · '+bay:''}${location?' · Location '+(location==='__NO_LOCATION__'?'not set':location):''}`;
+  $('statusLine').textContent=`${state.inventory.length} of ${state.allInventory.length} ${state.category} item${state.allInventory.length===1?'':'s'}${bay?' · '+bay:''}${location?' · Location '+(location==='__NO_LOCATION__'?'not set':location):''}`;
   $('filterSummary').textContent=[bay,location==='__NO_LOCATION__'?'No location':location,terms.length?'Search active':''].filter(Boolean).join(' · ');
 }
 
@@ -285,7 +285,7 @@ function populateLocationFilter(items){
   $('locationFilter').value=locations.includes(selected)?selected:'';
 }
 function compareInventoryItems(a,b,mode){
-  const byName=()=>String(a.name||'').localeCompare(String(b.name||''),undefined,{numeric:true,sensitivity:'base'});
+  const byName=()=>String(a.name||'').trim().localeCompare(String(b.name||'').trim(),undefined,{numeric:true,sensitivity:'base'});
   if(mode.startsWith('quantity-')){
     const aq=Number.isFinite(a.quantity)?a.quantity:null,bq=Number.isFinite(b.quantity)?b.quantity:null;
     if(aq===null || bq===null)return aq===bq?byName():aq===null?1:-1;
@@ -338,7 +338,7 @@ function setInventoryView(value){
 
 function inventoryQuantity(item){
   if(item.category==='carpet')return {qty:`${esc(item.quantityDisplay||'—')} <small>ft</small>`,sub:item.quantityMode==='dimension'?'Dimension-format remnant':''};
-  return {qty:`${esc(item.boxes??'—')} <small>boxes</small>`,sub:item.totalSf!=null?`${fmt(item.totalSf)} SF total${item.sfPerBox?` · ${fmt(item.sfPerBox)} SF/box`:''}`:''};
+  return {qty:`${esc(item.boxes??'—')} <small>${item.boxes===1?'box':'boxes'}</small>`,sub:item.totalSf!=null?`${fmt(item.totalSf)} SF total${item.sfPerBox?` · ${fmt(item.sfPerBox)} SF/box`:''}`:''};
 }
 function inventoryMeta(item){
   const meta=[];
