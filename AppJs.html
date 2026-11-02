@@ -11,6 +11,7 @@ const state = {
   categoryRevisions: {},
   visibleCount: 60,
   viewMode: 'cards',
+  cardSize: 285,
   carpetSheets: [],
   inventorySheets: {},
   moveItem: null,
@@ -113,7 +114,9 @@ function bindEvents(){
   $('bayFilter').addEventListener('change', applyInventoryFilters);
   $('locationFilter').addEventListener('change', applyInventoryFilters);
   $('sortOrder').addEventListener('change', applyInventoryFilters);
-  $('inventoryViewMode').addEventListener('change',()=>setInventoryView($('inventoryViewMode').value));
+  $('inventoryViewMode').addEventListener('change',()=>{setInventoryView($('inventoryViewMode').value);applyCardSize();});
+  $('cardSize').addEventListener('input',()=>{state.cardSize=validCardSize($('cardSize').value);applyCardSize();});
+  $('cardSize').addEventListener('change',saveCardSize);
   $('refreshBtn').addEventListener('click',()=>loadInventory(true));
   $('historyRefreshBtn').addEventListener('click',loadHistory);
   $('addRollBtn').addEventListener('click',openRollDialog);
@@ -145,6 +148,9 @@ async function bootstrap(){
   state.categoryRevisions={};
   state.user=data.user; state.carpetSheets=data.carpetSheets||[]; state.scannerUrl=data.scannerUrl||'';
   state.viewMode=readInventoryView(state.user.email);$('inventoryViewMode').value=state.viewMode;
+  state.cardSize=readCardSize(state.user.email);
+  if(loginHostNonce()){const size=await loginHostRequest('read-card-size',{email:state.user.email});if(size && size.ok)state.cardSize=validCardSize(size.size);}
+  applyCardSize();
   state.inventorySheets=data.inventorySheets||{carpet:state.carpetSheets};
   state.vinylConfigured=!!data.vinylConfigured;
   $('testBanner').classList.toggle('hidden',data.environment==='production');
@@ -267,6 +273,26 @@ function compareInventoryItems(a,b,mode){
 }
 
 function inventoryViewKey(email){return 'flairInventoryView:'+String(email||'').trim().toLowerCase();}
+function validCardSize(value){const size=Number(value);return Number.isFinite(size) && size>=140 && size<=440?Math.round(size/5)*5:285;}
+function cardSizeKey(email){return 'flairInventoryCardSize:'+String(email||'').trim().toLowerCase();}
+function readCardSize(email){try{return validCardSize(window.localStorage.getItem(cardSizeKey(email)));}catch(error){return 285;}}
+async function saveCardSize(){
+  const size=validCardSize(state.cardSize);
+  try{window.localStorage.setItem(cardSizeKey(state.user.email),String(size));}catch(error){}
+  if(loginHostNonce())await loginHostRequest('write-card-size',{email:state.user.email,size});
+}
+function applyCardSize(){
+  const grid=$('inventoryGrid'),size=validCardSize(state.cardSize),small=size<=220,wasSmall=grid.classList.contains('cards-small');
+  $('cardSizeControl').classList.toggle('hidden',state.viewMode!=='cards');
+  $('cardSize').value=size;
+  $('cardSizeValue').textContent=size<220?'Small':size>340?'Large':'Standard';
+  grid.style.setProperty('--card-width',size+'px');
+  grid.style.setProperty('--card-padding',Math.max(9,Math.min(22,Math.round(size/285*16)))+'px');
+  grid.style.setProperty('--card-title-size',Math.max(12,Math.min(20,Math.round(size/285*17)))+'px');
+  grid.style.setProperty('--card-qty-size',Math.max(19,Math.min(34,Math.round(size/285*28)))+'px');
+  grid.classList.toggle('cards-small',small);
+  if(wasSmall!==small)grid.querySelectorAll('.card-extra').forEach(details=>details.open=!small);
+}
 function readInventoryView(email){
   try {const value=window.localStorage.getItem(inventoryViewKey(email));return ['cards','compact','table'].includes(value)?value:'cards';}catch(error){return 'cards';}
 }
@@ -316,6 +342,7 @@ function renderInventoryTable(grid){
 
 function renderInventory(){
   const grid=$('inventoryGrid'); grid.className='inventory-grid inventory-'+state.viewMode;grid.innerHTML='';
+  applyCardSize();
   if(!state.inventory.length){grid.innerHTML='<div class="card"><strong>No inventory found.</strong></div>';return}
   if(state.viewMode==='table')renderInventoryTable(grid);
   else state.inventory.slice(0,state.visibleCount).forEach(item=>{
@@ -323,7 +350,9 @@ function renderInventory(){
     const est=item.estimated?'<span class="badge warn">Estimated</span>':'';
     const {qty,sub}=inventoryQuantity(item),meta=inventoryMeta(item);
     if(sub)card.classList.add('has-subqty');
-    card.innerHTML=`<div class="card-title"><h3>${esc(item.name)}</h3>${est}</div><div class="qty">${qty}</div>${sub?`<div class="subqty">${esc(sub)}</div>`:''}<div class="meta">${meta.map(m=>inventoryMetaField(item,...m)).join('')}</div><div class="inventory-actions">${inventoryActions(item)}</div>`;
+    const primary=meta.filter(m=>['Location','Bay','Right / Left'].includes(m[0])),extra=meta.filter(m=>!['Location','Bay','Right / Left'].includes(m[0]));
+    const metaHtml=state.viewMode==='cards'?`<div class="meta">${primary.map(m=>inventoryMetaField(item,...m)).join('')}</div>${extra.length?`<details class="card-extra" ${state.cardSize>220?'open':''}><summary>Details</summary><div class="meta">${extra.map(m=>inventoryMetaField(item,...m)).join('')}</div></details>`:''}`:`<div class="meta">${meta.map(m=>inventoryMetaField(item,...m)).join('')}</div>`;
+    card.innerHTML=`<div class="card-title"><h3>${esc(item.name)}</h3>${est}</div><div class="qty">${qty}</div>${sub?`<div class="subqty">${esc(sub)}</div>`:''}${metaHtml}<div class="inventory-actions">${inventoryActions(item)}</div>`;
     bindInventoryItem(card,item);
     grid.appendChild(card);
   });

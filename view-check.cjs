@@ -7,6 +7,8 @@ const ctx=vm.createContext({state,window,$:id=>{assert.ok(elements[id],'view swi
 vm.runInContext(js.slice(js.indexOf('function inventoryViewKey('),js.indexOf('function renderInventoryTable(')),ctx);
 vm.runInContext(js.slice(js.indexOf('function fmt('),js.indexOf('</script>')),ctx);
 assert.equal(ctx.readInventoryView('employee@example.invalid'),'cards');
+assert.equal(ctx.validCardSize(null),285);assert.equal(ctx.validCardSize('140'),140);assert.equal(ctx.validCardSize(440),440);assert.equal(ctx.validCardSize('bad'),285);assert.equal(ctx.validCardSize(999),285);
+storage.set(ctx.cardSizeKey(state.user.email),'190');assert.equal(ctx.readCardSize(state.user.email),190);assert.equal(ctx.readCardSize('other@example.invalid'),285);
 ctx.setInventoryView('table');assert.equal(state.viewMode,'table');assert.equal(elements.inventoryViewMode.value,'table');assert.equal(renders,1);assert.equal(state.visibleCount,120);
 assert.equal(ctx.readInventoryView(' EMPLOYEE@EXAMPLE.INVALID '),'table');assert.equal(ctx.readInventoryView('other@example.invalid'),'cards');
 ctx.setInventoryView('compact');assert.equal(ctx.readInventoryView(state.user.email),'compact');

@@ -14,6 +14,8 @@ function hostStoreLogin(token,remember){
   hostForgetLogin();
   try{const storage=window[remember?'localStorage':'sessionStorage'];storage.setItem(LOGIN_KEY,token);return storage.getItem(LOGIN_KEY)===token;}catch(error){return false;}
 }
+function hostCardSizeKey(email){return 'flairInventoryCardSize:'+String(email||'').trim().toLowerCase();}
+function hostCardSize(email){try{const size=Number(window.localStorage.getItem(hostCardSizeKey(email)));return Number.isFinite(size) && size>=140 && size<=440?Math.round(size/5)*5:285;}catch(error){return 285;}}
 function validLoginHostMessage(event,nonce,client){
   const data=event.data;
   return /^https:\/\/[a-z0-9-]+-script\.googleusercontent\.com$/.test(event.origin) &&
@@ -40,6 +42,13 @@ function startInventoryHost(){
         reply.saved=hostStoreLogin(data.token,data.remember);break;
       case 'forget':if(typeof data.token!=='string')return;hostForgetLogin(data.token);break;
       case 'clear':hostForgetLogin();break;
+      case 'read-card-size':
+        if(typeof data.email!=='string' || data.email.length>254)return;
+        reply.size=hostCardSize(data.email);break;
+      case 'write-card-size':
+        if(typeof data.email!=='string' || data.email.length>254 || !Number.isInteger(data.size) || data.size<140 || data.size>440)return;
+        try{window.localStorage.setItem(hostCardSizeKey(data.email),String(data.size));reply.saved=true;}catch(error){reply.saved=false;}
+        break;
       default:return;
     }
     clearTimeout(timer);status.hidden=true;
