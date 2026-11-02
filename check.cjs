@@ -18,6 +18,7 @@ assert.throws(()=>vm.runInContext("requireSession_('',true)",ctx),/session has e
 ctx.LockService={getScriptLock:()=>({waitLock(){},releaseLock(){}})};
 for(const name of ['getAppBootstrap','getInventory','getHistory','adjustInventory','addCarpetRoll','confirmCarpet','moveInventory'])assert.throws(()=>ctx[name](''),/session has expired/,name+' must reject missing login before accessing inventory');
 console.log('Syntax, estimated quantities, dimension blocking, SF calculation, private setup and missing-session checks passed.');
+if(fs.existsSync('docs/scanner.html'))for(const m of fs.readFileSync('docs/scanner.html','utf8').matchAll(/<script>([\s\S]*?)<\/script>/g))new vm.Script(m[1],{filename:'scanner.html'});
 let cells,history,held=false;
 ctx.LockService={getScriptLock:()=>({waitLock(){assert.equal(held,false);held=true;},releaseLock(){held=false;}})};
 ctx.CacheService={getScriptCache:()=>({remove(){}})};

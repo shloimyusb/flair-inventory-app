@@ -514,8 +514,8 @@ async function loadHistory(force){
     const rows=await job.promise;
     if(state.token!==token || state.historyRevision!==revision)return;
     state.historyCache={rows,loadedAt:Date.now()};renderHistory(rows);
-  }catch(err){if(state.token===token){if(!cache)$('historyList').innerHTML='<div class="card empty-state"><strong>Could not load activity</strong><p>Try Refresh to reconnect.</p></div>';toast(err.message,true);}}
-  finally{if(state.token===token)setBusy($('historyRefreshBtn'),false,'Refresh');}
+  }catch(err){if(state.token===token && state.historyRevision===revision){if(!cache)$('historyList').innerHTML='<div class="card empty-state"><strong>Could not load activity</strong><p>Try Refresh to reconnect.</p></div>';toast(err.message,true);}}
+  finally{if(state.token===token && state.historyRevision===revision)setBusy($('historyRefreshBtn'),false,'Refresh');}
 }
 
 function openScanner(event){
