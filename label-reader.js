@@ -12,6 +12,9 @@ function labelCarpetDraft(value){
 function labelCarpetFields(text,words){
   const lines=String(text||'').slice(0,6000).split(/\r?\n/).map(labelScanText).filter(Boolean);
   const result={styleName:'',colorName:'',lengthFeet:''};
+  // Mill labels often print STYLE COLOR BACK WIDTH LENGTH as one header row.
+  // Never turn that header (or a numeric style/color code) into a product name.
+  const validName=value=>/[a-z]{3}/i.test(value)&&!/(?:\b(?:NAME|STYLE|COLOU?R|BACK|WIDTH\w*|LENGTH\w*|DYE|ROLL|MILL|ORDER|SHADE|SKU|LLC|COMPANY|SHIPPING|TRUCK|DEPT|SQFT|SQYD)\b)/i.test(value);
   const boundary='(?=\\s+(?:STYLE|COLOU?R|WIDTH|LENGTH|DYE|ROLL|MILL|ORDER|SHADE|SKU)\\b|$)';
   for(const [key,label] of [['styleName','STYLE(?:\\s+NAME)?'],['colorName','COLOU?R(?:\\s+NAME)?']]){
     const field=new RegExp('(?:^|\\b)'+label+'(?!\\s*(?:NO\\b|NUMBER\\b|CODE\\b|#))\\s*[:=-]?\\s*(.*?)'+boundary,'i');
@@ -19,7 +22,7 @@ function labelCarpetFields(text,words){
       const match=lines[i].match(field);if(!match)continue;
       const candidate=match[1]||lines[i+1]||'';
       if(/^(?:NAME|STYLE|COLOU?R|WIDTH|LENGTH|FT|IN|DYE|ROLL|MILL|ORDER|SHADE|SKU)\b/i.test(candidate))continue;
-      if(!/[a-z]{3}/i.test(candidate)||/\b(?:LLC|COMPANY|SHIPPING|TRUCK)\b/i.test(candidate))continue;
+      if(!validName(candidate))continue;
       result[key]=candidate;break;
     }
   }
@@ -30,6 +33,21 @@ function labelCarpetFields(text,words){
   if(length)result.lengthFeet=feet(length[1],length[2]||0);
   const unitHeader=flat.match(/\b(?:ROLL\s+)?LENGTH\s*(?:\(\s*(?:FT|FEET)\s*\)|FT(?:\s*\/?\s*IN)?)\s*[:=-]?\s*(\d+(?:\.\d+)?)(?:\s+(\d{1,2})(?=\s|$))?/i);
   if(!result.lengthFeet&&unitHeader)result.lengthFeet=feet(unitHeader[1],unitHeader[2]||0);
+  // Shipping labels explicitly give Roll Size as width x length (decimal feet).
+  // Do not infer this from an arbitrary pair of numbers elsewhere on a label.
+  const rollSize=flat.match(/\bROLL\s+SIZE\s*[:=-]?\s*(\d{1,2}(?:\.\d+)?)\s*(?:FT|FEET)?\s*[x×]\s*(\d{1,6}(?:\.\d+)?)(?=\s|$)/i);
+  if(!result.lengthFeet&&rollSize&&Number(rollSize[1])>=3&&Number(rollSize[1])<=20)result.lengthFeet=feet(rollSize[2]);
+  // A name/color pair immediately after a SKU is used on shipping labels.
+  // Require the printed slash; never guess that an I, 1 or space was a slash.
+  for(let i=1;i<lines.length;i++){
+    if(!/^SKU\s*[:#]/i.test(lines[i-1]))continue;
+    const pair=lines[i].split('/');
+    if(pair.length===2&&pair.every(validName)){
+      if(!result.styleName)result.styleName=pair[0];
+      if(!result.colorName)result.colorName=pair[1];
+      break;
+    }
+  }
   // A Shaw width/length table has two FT / IN pairs. The second pair is length.
   const table=lines.findIndex(line=>/\bWIDTH\b.*\bLENGTH\b/i.test(line));
   if(!result.lengthFeet&&table>=0){
@@ -67,7 +85,7 @@ function labelCarpetFields(text,words){
       for(const row of rows){const numbers=row.sort((a,b)=>a.x0-b.x0).map(w=>w.text).join(' ').match(/^(\d{1,6}(?:\.\d+)?)(?:\s+(\d{1,2}))?$/);if(numbers){result.lengthFeet=feet(numbers[1],numbers[2]||0);break;}}
     }else{
       const row=rows.find(r=>r.some(w=>/[a-z]{3}/i.test(w.text))&&!r.some(w=>/^(?:STYLE|COLOU?R|WIDTH|LENGTH|NAME|NO|NUMBER)$/i.test(token(w))));
-      if(row)result[anchor.key]=row.sort((a,b)=>a.x0-b.x0).map(w=>w.text).join(' ');
+      if(row){const name=row.sort((a,b)=>a.x0-b.x0).map(w=>w.text).join(' ');if(validName(name))result[anchor.key]=name;}
     }
   }
   return labelCarpetDraft(result);

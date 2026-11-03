@@ -1,6 +1,7 @@
 .clasp.json
 .DS_Store
 node_modules/
+.local-ocr-tools/
 
 .pnpm-store/
 .clasprc.json
