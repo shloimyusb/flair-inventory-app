@@ -1,4 +1,9 @@
 function doGet(e) {
+  const bridge=String(e&&e.parameter&&e.parameter.labelBridge||'');
+  if(/^[a-f0-9]{64}$/.test(bridge)){
+    const page=HtmlService.createTemplateFromFile('LabelReaderBridge');page.bridgeNonce=bridge;
+    return page.evaluate().setTitle('Flair Label Reader').setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+  }
   const template = HtmlService.createTemplateFromFile('Index');
   template.initialScanCode = String(e && e.parameter && e.parameter.scanCode || '').slice(0,80);
   template.initialScanThickness = String(e && e.parameter && e.parameter.scanThickness || '').slice(0,20);

@@ -17,13 +17,14 @@ const base='https://shloimyusb.github.io/flair-inventory-app/app.html',draft={st
 const url=new URL(r.labelScanReturnUrl(base,'carpet','','','add',draft));assert.equal(url.searchParams.get('scanLength'),'50');assert.equal(url.searchParams.get('scanColor'),'SHADOW');
 assert.equal(new URL(r.labelScanReturnUrl(base,'carpet','Take Away Shadow','','',draft)).searchParams.has('scanLength'),false);
 const source=fs.readFileSync(grouped?'docs/scanner.html':'scanner.html','utf8'),elements={};
-for(const id of ['carpetStyle','carpetColor','carpetLength','codeInput','thicknessInput','status'])elements[id]={value:'',setCustomValidity(v){this.error=v;},reportValidity(){return !this.error;}};
+for(const id of ['carpetStyle','carpetColor','carpetLength','carpetVerified','codeInput','thicknessInput','status'])elements[id]={value:'',checked:true,setCustomValidity(v){this.error=v;},reportValidity(){return !this.error;}};
 elements.carpetStyle.value=draft.styleName;elements.carpetColor.value=draft.colorName;
 let destination='';
 const ctx=vm.createContext({...r,URLSearchParams,reading:false,failedScans:3,awaitingReview:false,$:id=>elements[id],currentCategory:()=> 'carpet',carpetDraft:()=>r.labelCarpetDraft({styleName:elements.carpetStyle.value,colorName:elements.carpetColor.value,lengthFeet:elements.carpetLength.value}),syncCarpetSearch(){elements.codeInput.value='TAKE AWAY (S) SHADOW';},updateScanFailures(){},stopCamera(){},location:{search:'',assign:v=>destination=v}});
 vm.runInContext(source.slice(source.indexOf('    function sendResult('),source.indexOf("    $('scanCategory').value=")),ctx);
 ctx.sendResult('');assert.equal(destination,'','Missing length must block a new-roll handoff');
 elements.carpetLength.value='50';ctx.sendResult('');assert.equal(new URL(destination).searchParams.get('scanLength'),'50');
+destination='';elements.carpetVerified.checked=false;ctx.sendResult('');assert.equal(destination,'','Unreviewed readings must not continue');elements.carpetVerified.checked=true;
 elements.carpetLength.value='';ctx.sendResult('search');assert.equal(new URL(destination).searchParams.has('scanLength'),false,'Search may use names but must never treat length as stock');
 const app=fs.readFileSync(grouped?'apps-script/AppJs.html':'AppJs.html','utf8'),fields={};
 for(const id of ['rollName','rollOriginal','rollCurrent','rollLabelNotice'])fields[id]={value:'',classList:{add(){},remove(){}}};

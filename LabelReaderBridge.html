@@ -1,0 +1,15 @@
+<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"></head><body>
+<input id="bridgeNonce" type="hidden" value="<?= bridgeNonce ?>">
+<script>
+const bridgeNonce=document.getElementById('bridgeNonce').value;
+const scannerOrigin='https://shloimyusb.github.io';
+window.addEventListener('message',event=>{
+  const d=event.data;
+  if(event.source!==window.top||event.origin!==scannerOrigin||!d||d.type!=='flair-label-request'||d.nonce!==bridgeNonce||!Number.isSafeInteger(d.id)||typeof d.token!=='string'||d.token.length>200)return;
+  const reply=(ok,result)=>window.top.postMessage({type:'flair-label-response',nonce:bridgeNonce,id:d.id,ok,result},scannerOrigin);
+  const run=google.script.run.withSuccessHandler(value=>reply(true,value)).withFailureHandler(error=>reply(false,String(error.message||'Could not connect to the label reader.')));
+  if(d.action==='status')run.getLabelReaderStatus(d.token);
+  else if(d.action==='read')run.analyzeCarpetLabel(d.token,d.request);
+});
+window.top.postMessage({type:'flair-label-ready',nonce:bridgeNonce},scannerOrigin);
+</script></body></html>
