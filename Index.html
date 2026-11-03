@@ -12,6 +12,9 @@
   <input type="hidden" id="initialScanThickness" value="<?= initialScanThickness ?>">
   <input type="hidden" id="initialScanCategory" value="<?= initialScanCategory ?>">
   <input type="hidden" id="initialScanAction" value="<?= initialScanAction ?>">
+  <input type="hidden" id="initialScanStyle" value="<?= initialScanStyle ?>">
+  <input type="hidden" id="initialScanColor" value="<?= initialScanColor ?>">
+  <input type="hidden" id="initialScanLength" value="<?= initialScanLength ?>">
   <input type="hidden" id="initialLoginHostNonce" value="<?= initialLoginHostNonce ?>">
 
   <main id="loginView" class="login-shell">
@@ -109,6 +112,7 @@
   <dialog id="rollDialog" class="modal wide">
     <form method="dialog" id="rollForm" class="stack">
       <div class="modal-head"><h3>Add New Carpet Roll</h3><button type="submit" formnovalidate value="cancel" class="icon-btn" aria-label="Close new carpet roll">×</button></div>
+      <p id="rollLabelNotice" class="info-box hidden" role="status"></p>
       <div class="form-grid">
         <label>Carpet name<input id="rollName" required></label>
         <label>Destination sheet<select id="rollSheet" required></select></label>

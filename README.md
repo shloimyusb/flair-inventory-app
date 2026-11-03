@@ -84,3 +84,5 @@ The View selector offers Cards, Compact list, and Table. Switching layouts uses 
 
 Tile cards and compact rows always show Right / Left, including Not set for blank values. Table includes a dedicated Right / Left column. Employees can tap the field to choose Left, Right or Not set, optionally changing bay/location at the same time. The server updates the existing R-L / Side column in the same atomic move/history batch, checks for stale side edits, and preserves quantities and dates. View-only users cannot edit it.
 
+
+Carpet scans for new rolls require Style name, Color name and Roll length in feet. The parser uses explicit field headings and FT/IN table columns, keeps width and dye-lot numbers separate, and leaves unread fields for manual entry. Review new roll passes only bounded reviewed fields to the authenticated app; the new roll name combines style/color and both original/current footage start at the reviewed length. A separate Add roll saves the record. Existing-item search uses names only. Run carpet-label-check.cjs for required-length and draft-prefill checks.

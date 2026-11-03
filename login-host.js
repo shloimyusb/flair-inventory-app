@@ -65,6 +65,7 @@ function startInventoryHost(){
   for(const [key,max] of [['scanCode',80],['scanThickness',20]])if(query.has(key))url.searchParams.set(key,query.get(key).slice(0,max));
   const category=query.get('scanCategory');if(['carpet','tile','vinyl'].includes(category))url.searchParams.set('scanCategory',category);
   if(query.get('scanAction')==='add')url.searchParams.set('scanAction','add');
+  if(category==='carpet'&&query.get('scanAction')==='add')for(const [key,max] of [['scanStyle',80],['scanColor',80],['scanLength',12]])if(query.has(key))url.searchParams.set(key,query.get(key).slice(0,max));
   frame.hidden=false;frame.src=url.toString();
 }
 startInventoryHost();

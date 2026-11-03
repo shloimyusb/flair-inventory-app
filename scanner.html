@@ -35,11 +35,17 @@
     </div>
 
     <div id="resultCard" class="card">
+      <div id="carpetLabelFields" class="stack hidden" style="display:grid;gap:14px">
+        <label>Style name<input id="carpetStyle" maxlength="80" autocomplete="off" required></label>
+        <label>Color name<input id="carpetColor" maxlength="80" autocomplete="off" required></label>
+        <label>Roll length (feet)<input id="carpetLength" type="number" min="0.01" max="999999" step="0.01" inputmode="decimal" required></label>
+        <p class="status" style="margin:0">Check all three fields. The length will fill original and current footage for this new roll. You can review everything before saving.</p>
+      </div>
       <div id="scanResultFields" class="result">
         <div class="field"><small id="codeLabel">Name / product code</small><strong id="codeText">—</strong></div>
         <div id="thicknessResult" class="field"><small>Thickness</small><strong id="thicknessText">—</strong></div>
       </div>
-      <p class="scan-copy">Check the detected text or choose another suggestion, then search for the matching item.</p>
+      <p id="scanResultCopy" class="scan-copy">Check the detected text or choose another suggestion, then search for the matching item.</p>
       <div id="scanSuggestions" class="suggestions" role="group" aria-label="Detected label text"></div>
       <button id="rejectResult" type="button" class="btn secondary hidden">This text isn't right</button>
       <div id="manualFields" class="manual">
@@ -48,20 +54,26 @@
       </div>
       <details id="rawLabel" class="label-text hidden"><summary>Read label text</summary><label>Detected text<textarea id="labelText" readonly></textarea></label></details>
       <div class="actions" style="margin-top:12px"><button id="useResult" class="btn primary">Search inventory</button><button id="scanAgain" class="btn secondary">Scan Again</button></div>
+      <button id="searchCarpet" type="button" class="btn secondary hidden">Search existing carpet</button>
     </div>
   </div>
-  <script src="label-reader.js?v=20261102-4"></script>
+  <script src="label-reader.js?v=20261103-carpet-1"></script>
   <script>
     let stream=null,ocrLoading=null,reading=false,cameraRequest=0,ocrWorkerPromise=null;
-    let lastLabelText='',failedScans=0,awaitingReview=false,sourcePhoto=null,photoTurns=0,photoTilt=0,cropRect=null,photoRequest=0;
+    let lastLabelText='',lastLabelWords=[],failedScans=0,awaitingReview=false,sourcePhoto=null,photoTurns=0,photoTilt=0,cropRect=null,photoRequest=0;
     const $=id=>document.getElementById(id);
     function currentCategory(){return labelScanCategory($('scanCategory').value);}
     function selectSearchText(value){
       $('codeInput').value=value;$('codeText').textContent=value||'—';
       $('scanSuggestions').querySelectorAll('button').forEach(button=>button.setAttribute('aria-pressed',String(button.dataset.query===value)));
     }
-    function showLabelSuggestions(text){
+    function carpetDraft(){return labelCarpetDraft({styleName:$('carpetStyle').value,colorName:$('carpetColor').value,lengthFeet:$('carpetLength').value});}
+    function syncCarpetSearch(){const draft=carpetDraft();selectSearchText([draft.styleName,draft.colorName].filter(Boolean).join(' ').slice(0,80));}
+    function showLabelSuggestions(text,words){
       const category=currentCategory(),suggestions=labelScanCandidates(text,category),container=$('scanSuggestions');container.replaceChildren();
+      if(category==='carpet'){
+        const fields=labelCarpetFields(text,words);$('carpetStyle').value=fields.styleName;$('carpetColor').value=fields.colorName;$('carpetLength').value=fields.lengthFeet;syncCarpetSearch();$('rawLabel').classList.add('hidden');return;
+      }
       for(const suggestion of suggestions){const button=document.createElement('button'),label=document.createElement('small'),value=document.createElement('span');button.type='button';button.dataset.query=suggestion.value;label.textContent=suggestion.label;value.textContent=suggestion.value;button.append(label,value);button.addEventListener('click',()=>selectSearchText(suggestion.value));container.appendChild(button);}
       selectSearchText(suggestions[0]?.value||'');
       const thickness=category==='vinyl'?labelScanThickness(text):'';
@@ -69,15 +81,21 @@
       $('labelText').value=text;$('rawLabel').classList.toggle('hidden',!text);
     }
     function configureScanCategory(){
-      const category=currentCategory(),name=category[0].toUpperCase()+category.slice(1),vinyl=category==='vinyl';
+      const category=currentCategory(),name=category[0].toUpperCase()+category.slice(1),vinyl=category==='vinyl',carpet=category==='carpet';
       $('scannerTitle').textContent='Scan '+name+' Label';document.title='Flair '+name+' Label Scanner';
-      $('scanHelp').textContent=category==='carpet'?'Photograph the product name, style or roll code on the carpet label.':category==='tile'?'Photograph the tile name or manufacturer SKU / item code on the box.':'Photograph the product code and overall thickness, such as 1194-1 and 4.5 mm.';
+      $('scanHelp').textContent=carpet?'Add a new roll: turn the label upright, then photograph the style name, color name and LENGTH section. Include FT / IN headings; crop out nearby labels.':category==='tile'?'Photograph the tile name or manufacturer SKU / item code on the box.':'Photograph the product code and overall thickness, such as 1194-1 and 4.5 mm.';
+      $('carpetLabelFields').classList.toggle('hidden',!carpet);$('searchCarpet').classList.toggle('hidden',!carpet);
+      for(const id of ['scanResultFields','scanResultCopy','scanSuggestions','manualFields'])$(id).classList.toggle('hidden',carpet);
+      $('useResult').textContent=carpet?'Review new roll':'Search inventory';
+      $('ocrMode').value=carpet?'6':'11';
+      $('manualSearch').textContent=carpet?'Find existing carpet':'Search manually';$('manualAdd').textContent=carpet?'Enter roll manually':'Add new item';
+      $('manualFallback').querySelector('p').textContent=carpet?'Enter the style name, color name and roll length below, then review the new roll.':'Enter a name or SKU to search, or create a new item in inventory.';
       $('codeLabel').textContent=vinyl?'Product code':'Name / product code';$('queryLabel').textContent=vinyl?'Correct code':'Search name or code';
       for(const id of ['thicknessResult','thicknessField'])$(id).classList.toggle('hidden',!vinyl);
       for(const id of ['scanResultFields','manualFields'])$(id).classList.toggle('single',!vinyl);
       const base=new URLSearchParams(location.search).get('returnUrl')||'https://shloimyusb.github.io/flair-inventory-app/app.html';
       document.querySelector('.back-link').href=labelScanReturnUrl(base,category,'','')||'app.html';
-      showLabelSuggestions(lastLabelText);
+      showLabelSuggestions(lastLabelText,lastLabelWords);
       failedScans=0;awaitingReview=false;$('rejectResult').classList.add('hidden');updateScanFailures();
     }
     function updateScanFailures(){
@@ -139,25 +157,30 @@
       setPhotoSource(v,v.videoWidth,v.videoHeight);stopCamera();await readCurrentPhoto();
     }
     async function readLabel(source){
-      if(reading)return;rejectCurrentRead();reading=true;lastLabelText='';showLabelSuggestions('');for(const id of ['capture','retry','scanAgain','photoInput','scanCategory','useResult','rotateLeft','rotateRight','readPhoto','clearCrop','manualAdd','tiltAngle','ocrMode'])$(id).disabled=true;
+      if(reading)return;rejectCurrentRead();reading=true;lastLabelText='';lastLabelWords=[];showLabelSuggestions('');for(const id of ['capture','retry','scanAgain','photoInput','scanCategory','useResult','rotateLeft','rotateRight','readPhoto','clearCrop','manualAdd','tiltAngle','ocrMode','carpetStyle','carpetColor','carpetLength','searchCarpet'])$(id).disabled=true;
       $('status').textContent='Reading label…';
       try{
         const worker=await getOcrWorker();await worker.setParameters({tessedit_pageseg_mode:$('ocrMode').value,preserve_interword_spaces:'1',user_defined_dpi:'300'});
         const r=await worker.recognize(source);
-        lastLabelText=String(r.data.text||'').slice(0,6000);showLabelSuggestions(lastLabelText);
-        awaitingReview=!!$('codeInput').value;$('rejectResult').classList.toggle('hidden',!awaitingReview);if(!awaitingReview)failScan();
-        $('resultCard').classList.remove('hidden');$('status').textContent=$('codeInput').value?'Check the result before searching inventory.':'No product text found. Enter a name or code below, or try another photo.';
+        lastLabelText=String(r.data.text||'').slice(0,6000);lastLabelWords=r.data.words||[];showLabelSuggestions(lastLabelText,lastLabelWords);
+        const draft=carpetDraft(),carpet=currentCategory()==='carpet';
+        awaitingReview=carpet?!!(draft.styleName&&draft.colorName&&draft.lengthFeet):!!$('codeInput').value;$('rejectResult').classList.toggle('hidden',!awaitingReview);if(!awaitingReview)failScan();
+        $('resultCard').classList.remove('hidden');$('status').textContent=carpet?(awaitingReview?'Check style, color and roll length, then review the new roll.':'Some roll details could not be read. Enter all three fields below, or crop and read again.'):($('codeInput').value?'Check the result before searching inventory.':'No product text found. Enter a name or code below, or try another photo.');
       }catch(e){releaseOcrWorker();failScan();$('status').textContent='Could not read the label. Try again with less glare or enter it manually.';$('resultCard').classList.remove('hidden')}
-      finally{reading=false;for(const id of ['retry','scanAgain','photoInput','scanCategory','useResult','rotateLeft','rotateRight','readPhoto','clearCrop','manualAdd','tiltAngle','ocrMode'])$(id).disabled=false;$('capture').disabled=!stream;}
+      finally{reading=false;for(const id of ['retry','scanAgain','photoInput','scanCategory','useResult','rotateLeft','rotateRight','readPhoto','clearCrop','manualAdd','tiltAngle','ocrMode','carpetStyle','carpetColor','carpetLength','searchCarpet'])$(id).disabled=false;$('capture').disabled=!stream;}
     }
     function sendResult(action){
       if(reading)return;
-      action=action==='add'?'add':'';
-      const category=currentCategory(),code=labelScanText($('codeInput').value).slice(0,80),thickness=category==='vinyl'?$('thicknessInput').value.trim():'';
+      const category=currentCategory(),draft=carpetDraft();action=action==='add'||(category==='carpet'&&action!=='search')?'add':'';
+      if(category==='carpet'){
+        syncCarpetSearch();
+        if(action==='add')for(const [id,value] of [['carpetStyle',draft.styleName],['carpetColor',draft.colorName],['carpetLength',draft.lengthFeet]]){$(id).setCustomValidity(value?'':'Enter this required roll detail.');if(!$(id).reportValidity()){$('status').textContent='Style name, color name and roll length are required. Enter anything the scanner missed.';return;}}
+      }
+      const code=labelScanText($('codeInput').value).slice(0,80),thickness=category==='vinyl'?$('thicknessInput').value.trim():'';
       if(!action && !code && !thickness){$('status').textContent='Enter a product name or code first.';return}
       failedScans=labelScanFailures(failedScans,'accepted');awaitingReview=false;updateScanFailures();
       const returnUrl=new URLSearchParams(location.search).get('returnUrl');
-      const destination=labelScanReturnUrl(returnUrl||'https://shloimyusb.github.io/flair-inventory-app/app.html',category,action?'':code,action?'':thickness,action);
+      const destination=labelScanReturnUrl(returnUrl||'https://shloimyusb.github.io/flair-inventory-app/app.html',category,action?'':code,action?'':thickness,action,draft);
       if(destination){stopCamera();location.assign(destination);return;}
       const params=new URLSearchParams(location.search),origin=params.get('returnOrigin'),nonce=params.get('nonce');
       if(window.opener && origin && /^https:\/\/([a-z0-9-]+-script\.googleusercontent\.com|script\.google\.com)$/.test(origin)){window.opener.postMessage({type:'flair-inventory-scan',category,code,thickness,nonce},origin);window.close()} else {$('status').textContent='Open this scanner from Flair Inventory to return the result.'}
@@ -165,6 +188,8 @@
     $('scanCategory').value=labelScanCategory(new URLSearchParams(location.search).get('category'));configureScanCategory();
     $('scanCategory').addEventListener('change',configureScanCategory);
     $('codeInput').addEventListener('input',()=>{$('codeText').textContent=$('codeInput').value||'—';$('scanSuggestions').querySelectorAll('button').forEach(button=>button.setAttribute('aria-pressed',String(button.dataset.query===$('codeInput').value)));});
+    for(const id of ['carpetStyle','carpetColor','carpetLength'])$(id).addEventListener('input',()=>{$(id).setCustomValidity('');syncCarpetSearch();});
+    $('searchCarpet').addEventListener('click',()=>sendResult('search'));
     $('photoInput').addEventListener('change',e=>{const file=e.target.files[0];if(file)uploadPhoto(file);});
     $('rotateLeft').addEventListener('click',()=>{photoTurns=(photoTurns+3)%4;drawPhoto();});$('rotateRight').addEventListener('click',()=>{photoTurns=(photoTurns+1)%4;drawPhoto();});$('readPhoto').addEventListener('click',readCurrentPhoto);$('clearCrop').addEventListener('click',clearCrop);
     $('tiltAngle').addEventListener('input',()=>{$('tiltValue').textContent=$('tiltAngle').value+'°';});$('tiltAngle').addEventListener('change',()=>{photoTilt=Number($('tiltAngle').value);drawPhoto();});
@@ -174,8 +199,9 @@
     $('canvas').addEventListener('pointerdown',event=>{if(reading)return;dragStart=point(event);$('canvas').setPointerCapture(event.pointerId);});
     $('canvas').addEventListener('pointermove',event=>{if(!dragStart || reading)return;const p=point(event);cropRect={x:Math.min(p.x,dragStart.x),y:Math.min(p.y,dragStart.y),w:Math.abs(p.x-dragStart.x),h:Math.abs(p.y-dragStart.y)};drawCropBox();});
     for(const name of ['pointerup','pointercancel'])$('canvas').addEventListener(name,()=>{if(cropRect && (cropRect.w<.01||cropRect.h<.01))clearCrop();dragStart=null;});
-    $('rejectResult').addEventListener('click',()=>{rejectCurrentRead();selectSearchText('');$('status').textContent='Try rotating or cropping the label, or enter the item manually.';});
-    $('manualSearch').addEventListener('click',()=>{$('codeInput').scrollIntoView({block:'center'});$('codeInput').focus();});$('manualAdd').addEventListener('click',()=>sendResult('add'));
+    $('rejectResult').addEventListener('click',()=>{rejectCurrentRead();if(currentCategory()==='carpet')for(const id of ['carpetStyle','carpetColor','carpetLength'])$(id).value='';selectSearchText('');$('status').textContent='Try rotating or cropping the label, or enter the item manually.';});
+    function focusManualField(){const field=$(currentCategory()==='carpet'?'carpetStyle':'codeInput');field.scrollIntoView({block:'center'});field.focus();}
+    $('manualSearch').addEventListener('click',()=>currentCategory()==='carpet'?sendResult('search'):focusManualField());$('manualAdd').addEventListener('click',()=>currentCategory()==='carpet'?focusManualField():sendResult('add'));
     $('capture').addEventListener('click',capture);for(const id of ['retry','scanAgain'])$(id).addEventListener('click',()=>{rejectCurrentRead();showCameraView();startCamera();});$('useResult').addEventListener('click',()=>sendResult(''));window.addEventListener('pagehide',()=>{stopCamera();releaseOcrWorker();});startCamera();
   </script>
 </body>

@@ -193,10 +193,11 @@ async function bootstrap(){
   const category=['carpet','tile','vinyl'].includes(requested)?requested:(code||thickness?'vinyl':'carpet');
   const scanToken=state.token;await useScannedSearch(category,code,thickness);
   if(state.token===scanToken && state.category===category && $('initialScanAction').value==='add'){
-    openManualItem(category);
+    await openManualItem(category,{styleName:$('initialScanStyle').value,colorName:$('initialScanColor').value,lengthFeet:$('initialScanLength').value});
   }
   $('initialScanCode').value='';$('initialScanThickness').value='';$('initialScanCategory').value='';
   $('initialScanAction').value='';
+  for(const id of ['initialScanStyle','initialScanColor','initialScanLength'])$(id).value='';
   // Warm the other tabs while the employee is viewing the first category.
   for(const other of ['carpet','tile'])if(other!==state.category && !state.loadedCategories[other])fetchInventoryCategory(other,false).catch(()=>{});
   if(state.vinylConfigured && !state.loadedCategories.vinyl)fetchInventoryCategory('vinyl',false).catch(()=>{});
@@ -521,7 +522,19 @@ async function saveAdjustment(){
 function populateRollSheets(){
   $('rollSheet').innerHTML=state.carpetSheets.map(s=>`<option value="${escAttr(s)}">${esc(s)}</option>`).join('');
 }
-async function openRollDialog(){
+function applyCarpetLabelDraft(draft){
+  $('rollLabelNotice').classList.add('hidden');
+  if(!draft||typeof draft.styleName!=='string'||typeof draft.colorName!=='string')return;
+  const style=draft.styleName.trim().slice(0,80),color=draft.colorName.trim().slice(0,80),length=String(draft.lengthFeet||'');
+  $('rollName').value=[style,color].filter(Boolean).join(' / ');
+  if(/^\d{1,6}(?:\.\d{1,4})?$/.test(length)&&Number(length)>0){
+    const footage=Math.round(Number(length)*100)/100;
+    $('rollOriginal').value=footage;$('rollCurrent').value=footage;
+    $('rollLabelNotice').textContent='New roll from label: '+fmt(footage)+' ft. Check the name, footage, bay and location before adding it.';
+    $('rollLabelNotice').classList.remove('hidden');
+  }
+}
+async function openRollDialog(draft){
   if(state.user.role==='view'){toast('Your account is view-only.',true);return;}
   if(state.rollSaving){toast('Your roll is still saving.');return;}
   if(!state.carpetSheets.length){
@@ -529,7 +542,7 @@ async function openRollDialog(){
     try{await ensureSheetNames('carpet');}catch(error){toast(error.message,true);return;}
     if(state.token!==token || !state.user || state.user.role==='view')return;
   }
-  $('rollForm').reset();populateRollSheets();$('rollDialog').showModal();
+  $('rollForm').reset();populateRollSheets();applyCarpetLabelDraft(draft);$('rollDialog').showModal();
 }
 async function saveRoll(){
   if(state.rollSaving || !$('rollForm').reportValidity())return;
@@ -600,9 +613,9 @@ async function loadHistory(force){
   finally{if(state.token===token && state.historyRevision===revision)setBusy($('historyRefreshBtn'),false,'Refresh');}
 }
 
-function openManualItem(category){
+function openManualItem(category,draft){
   if(!state.user || state.user.role==='view'){toast('Your account is view-only. You can search inventory but cannot add items.',true);return;}
-  if(category==='carpet')openRollDialog();else if(category==='tile')openTileDialog();else toast('Connect the vinyl inventory sheet before adding vinyl items.',true);
+  if(category==='carpet')return openRollDialog(draft);else if(category==='tile')return openTileDialog();else toast('Connect the vinyl inventory sheet before adding vinyl items.',true);
 }
 async function useScannedSearch(category,code,thickness){
   if(!['carpet','tile','vinyl'].includes(category))return;
