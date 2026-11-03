@@ -35,7 +35,7 @@ function labelCarpetFields(text,words){
   if(!result.lengthFeet&&unitHeader)result.lengthFeet=feet(unitHeader[1],unitHeader[2]||0);
   // Shipping labels explicitly give Roll Size as width x length (decimal feet).
   // Do not infer this from an arbitrary pair of numbers elsewhere on a label.
-  const rollSize=flat.match(/\bROLL\s+SIZE\s*[:=-]?\s*(\d{1,2}(?:\.\d+)?)\s*(?:FT|FEET)?\s*[x×]\s*(\d{1,6}(?:\.\d+)?)(?=\s|$)/i);
+  const rollSize=flat.match(/\bROLL\s+SIZE\s*[:=-]?\s*(\d{1,2}(?:\.\d+)?)\s*(?:FT|FEET)?\s*[x×]\s*(\d{1,6}(?:\.\d+)?)(?=\s|$)(?!\s+\d+\b)/i);
   if(!result.lengthFeet&&rollSize&&Number(rollSize[1])>=3&&Number(rollSize[1])<=20)result.lengthFeet=feet(rollSize[2]);
   // A name/color pair immediately after a SKU is used on shipping labels.
   // Require the printed slash; never guess that an I, 1 or space was a slash.

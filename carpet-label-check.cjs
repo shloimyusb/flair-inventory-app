@@ -11,6 +11,7 @@ assert.equal(r.labelCarpetFields('WIDTH LENGTH DYE LOT\nFT IN FT IN\n12 00 50 01
 assert.deepEqual(r.labelCarpetFields('SKU: E231/956/1200\nDAREDEVIL/BAYSIDE\nRoll Size: 12.00 x 150.00'),{styleName:'DAREDEVIL',colorName:'BAYSIDE',lengthFeet:'150'});
 assert.equal(r.labelCarpetFields('SKU: E231/956/1200\nDAREDEVILIBAYSIDE\nRoll Size: 12.00 x 150.00').styleName,'','Do not repair uncertain OCR into an invented name/color split');
 assert.equal(r.labelCarpetFields('Size: 12.00 x 150.00').lengthFeet,'','Require explicit Roll Size context');
+assert.equal(r.labelCarpetFields('Roll Size: 12.00 x 71 01').lengthFeet,'','Do not silently discard an uncertain decimal or inch value');
 assert.equal(r.labelCarpetDraft({lengthFeet:'Infinity'}).lengthFeet,'');
 const base='https://shloimyusb.github.io/flair-inventory-app/app.html',draft={styleName:'TAKE AWAY (S)',colorName:'SHADOW',lengthFeet:'50'};
 const url=new URL(r.labelScanReturnUrl(base,'carpet','','','add',draft));assert.equal(url.searchParams.get('scanLength'),'50');assert.equal(url.searchParams.get('scanColor'),'SHADOW');
